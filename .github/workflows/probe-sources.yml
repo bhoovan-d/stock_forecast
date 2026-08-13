@@ -1,0 +1,128 @@
+name: Probe data sources
+
+# Answers one question before any deployment work is committed to: are the exchange
+# endpoints reachable from a CI runner at all?
+#
+# This matters because www.nseindia.com already blocks the developer's own machine (403,
+# even with full browser headers), and exchange sites block datacenter ranges far more
+# aggressively than residential ones. GitHub runners are Azure datacenter IPs. If
+# nsearchives and BSE are blocked here, the whole cloud-pipeline design collapses and the
+# pipeline has to run locally, so this is worth proving rather than assuming.
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - ".github/workflows/probe-sources.yml"
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install probe dependencies
+        run: pip install httpx
+
+      - name: Probe exchange and market-data endpoints
+        run: |
+          python - <<'PY'
+          import httpx, json, sys, zipfile, io
+
+          UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
+          NSE_H = {"User-Agent": UA, "Referer": "https://www.nseindia.com/"}
+          BSE_H = {"User-Agent": UA, "Referer": "https://www.bseindia.com/corporates/ann.html",
+                   "Origin": "https://www.bseindia.com", "Accept": "application/json, text/plain, */*"}
+
+          results = {}
+
+          def probe(name, url, headers, params=None, check=None):
+              try:
+                  r = httpx.get(url, headers=headers, params=params, timeout=40,
+                                follow_redirects=True)
+                  ok = r.status_code == 200 and (check(r) if check else len(r.content) > 100)
+                  detail = f"HTTP {r.status_code}, {len(r.content):,} bytes"
+              except Exception as exc:
+                  ok, detail = False, f"{type(exc).__name__}: {str(exc)[:90]}"
+              results[name] = (ok, detail)
+              print(f"{'PASS' if ok else 'FAIL'}  {name:34} {detail}")
+
+          print("=" * 74)
+          print("Runner egress IP:")
+          try:
+              print("  ", httpx.get("https://api.ipify.org", timeout=20).text)
+          except Exception as exc:
+              print("   unknown:", exc)
+          print("=" * 74)
+
+          # The backbone: universe, EOD bars, option chain, delivery.
+          probe("NSE archives: universe CSV",
+                "https://nsearchives.nseindia.com/content/indices/ind_nifty500list.csv", NSE_H)
+
+          def zip_ok(r):
+              try:
+                  zipfile.ZipFile(io.BytesIO(r.content)).namelist()
+                  return True
+              except Exception:
+                  return False
+
+          probe("NSE archives: CM bhavcopy",
+                "https://nsearchives.nseindia.com/content/cm/BhavCopy_NSE_CM_0_0_0_20260812_F_0000.csv.zip",
+                NSE_H, check=zip_ok)
+          probe("NSE archives: FO bhavcopy (gamma)",
+                "https://nsearchives.nseindia.com/content/fo/BhavCopy_NSE_FO_0_0_0_20260812_F_0000.csv.zip",
+                NSE_H, check=zip_ok)
+          probe("NSE archives: MTO delivery",
+                "https://nsearchives.nseindia.com/archives/equities/mto/MTO_12082026.DAT", NSE_H)
+
+          # Catalyst source.
+          probe("BSE: scrip master (ISIN join)",
+                "https://api.bseindia.com/BseIndiaAPI/api/ListofScripData/w", BSE_H,
+                params={"Group": "", "Scripcode": "", "industry": "", "segment": "Equity",
+                        "status": "Active"})
+          probe("BSE: announcements",
+                "https://api.bseindia.com/BseIndiaAPI/api/AnnSubCategoryGetData/w", BSE_H,
+                params={"pageno": 1, "strCat": "Result", "strPrevDate": "20260810",
+                        "strToDate": "20260813", "strScrip": "", "strSearch": "P",
+                        "strType": "C", "subcategory": "-1"},
+                check=lambda r: len(r.json().get("Table", [])) > 0)
+
+          # Intraday, indices and the macro panel.
+          probe("Yahoo: NIFTY daily",
+                "https://query1.finance.yahoo.com/v8/finance/chart/%5ENSEI",
+                {"User-Agent": UA}, params={"range": "1mo", "interval": "1d"},
+                check=lambda r: bool(r.json().get("chart", {}).get("result")))
+          probe("Yahoo: NSE stock (RELIANCE.NS)",
+                "https://query1.finance.yahoo.com/v8/finance/chart/RELIANCE.NS",
+                {"User-Agent": UA}, params={"range": "1mo", "interval": "1d"},
+                check=lambda r: bool(r.json().get("chart", {}).get("result")))
+
+          # News feeds.
+          probe("RSS: Economic Times markets",
+                "https://economictimes.indiatimes.com/markets/rssfeeds/1977021501.cms",
+                {"User-Agent": UA})
+
+          print("=" * 74)
+          critical = ["NSE archives: universe CSV", "NSE archives: CM bhavcopy",
+                      "NSE archives: FO bhavcopy (gamma)", "Yahoo: NIFTY daily"]
+          failed = [k for k in critical if not results[k][0]]
+
+          if failed:
+              print("VERDICT: cloud pipeline NOT viable — critical sources blocked from CI:")
+              for k in failed:
+                  print(f"   - {k}: {results[k][1]}")
+              print("\nRun the pipeline locally and publish only its output.")
+              sys.exit(1)
+
+          optional = [k for k, (ok, _) in results.items() if not ok]
+          print("VERDICT: critical sources reachable — cloud pipeline is viable.")
+          if optional:
+              print("Degraded (non-blocking):")
+              for k in optional:
+                  print(f"   - {k}: {results[k][1]}")
+          PY
