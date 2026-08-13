@@ -142,7 +142,7 @@ uv run asymmetry journal review      # your decisions vs the system's
 uv run pytest -q                     # tests
 ```
 
-### Scheduling
+### Scheduling — locally
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File scripts\install_schedule.ps1
@@ -151,6 +151,48 @@ powershell -ExecutionPolicy Bypass -File scripts\install_schedule.ps1
 Registers a weekday 18:45 task: backfill → settle journal → brief + dashboard. NSE closes
 15:30 IST and the bhavcopy lands ~18:00 IST, so anything earlier just 404s and builds a
 brief from stale data. Logs to `data/logs/`.
+
+## Deployment
+
+The pipeline runs on **GitHub Actions**; **Vercel serves static HTML**. Nothing is computed
+at request time — a daily brief describes one closed session and never changes, so a server
+would have nothing to do.
+
+```
+Actions (weekday 19:00 IST)                 Vercel
+  backfill → engines → brief --html   →  public/  →  static site
+  → build site → commit public/          (auto-deploys on push)
+```
+
+Serverless is the wrong shape for the pipeline itself: the store is ~100MB and must
+persist, a full refresh takes 10+ minutes, and Vercel functions are stateless with a 60s
+ceiling. So Actions does the work and Vercel only serves the output.
+
+**Reachability was verified, not assumed.** `.github/workflows/probe-sources.yml` tests
+every endpoint from a runner — one step per source, because Actions logs need admin rights
+even on a public repo while per-step conclusions are publicly readable. All sources answer
+from GitHub's IPs. BSE rate-limits under rapid sequential requests, which is why the paced
+client with backoff matters in CI.
+
+### Deploying
+
+1. **Vercel** → New Project → import this repo. Framework preset **Other**, output
+   directory **`public`**, no build command. `vercel.json` already sets this.
+2. **Optional LLM keys** for catalyst scoring — repo Settings → Secrets → Actions:
+   `CEREBRAS_API_KEY`, `GROQ_API_KEY`, `GEMINI_API_KEY`. With none set the pipeline still
+   runs and the brief simply carries no news catalysts.
+3. **First run**: Actions → *Daily brief* → *Run workflow*. The cold start backfills 400
+   sessions (~4 min); later runs restore the cached store and are incremental.
+
+Each run commits `public/` and Vercel redeploys. `/latest` always redirects to the newest
+brief.
+
+### Costs
+
+Free tier throughout: Actions gives 2,000 min/month on private repos and is unlimited on
+public ones (this run is ~5–15 min/day), Vercel's Hobby plan covers static hosting, and the
+LLM cascade uses free tiers. Groq's free allowance is 100k tokens/day, which a full refresh
+can exhaust — the cascade then falls through to Cerebras and Gemini automatically.
 
 ## Honest limitations
 

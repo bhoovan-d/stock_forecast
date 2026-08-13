@@ -1,0 +1,128 @@
+name: Daily brief
+
+# Runs the full pipeline after the session closes and publishes the result.
+#
+# Reachability from CI was verified before this was written (see probe-sources.yml): the
+# NSE archives, BSE API, Yahoo and the RSS feeds all answer from a GitHub runner. BSE in
+# particular rate-limits under rapid sequential requests, which is why the project's paced
+# HTTP client with backoff matters here and a naive fetch loop would fail.
+#
+# Timing: NSE closes 15:30 IST and the bhavcopy is published around 18:00 IST. This runs at
+# 13:30 UTC (19:00 IST), leaving headroom for a late publish. Running earlier just 404s on
+# the archive and builds a brief from stale data.
+
+on:
+  schedule:
+    - cron: "30 13 * * 1-5"   # 19:00 IST, weekdays
+  workflow_dispatch:
+    inputs:
+      refresh_catalysts:
+        description: "Re-score news and filings via LLM (slow)"
+        type: boolean
+        default: true
+
+concurrency:
+  group: daily-brief
+  cancel-in-progress: false
+
+permissions:
+  contents: write   # to commit the generated site back
+
+jobs:
+  brief:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+
+      # The SQLite store is ~100MB and expensive to rebuild (a cold start re-downloads 400
+      # bhavcopies). Caching it turns the daily run into a short incremental update.
+      - name: Restore market data store
+        uses: actions/cache@v4
+        with:
+          path: |
+            data/asymmetry.db
+            data/cache
+          key: asymmetry-store-${{ github.run_id }}
+          restore-keys: |
+            asymmetry-store-
+
+      - name: Backfill recent sessions
+        run: |
+          # 30 days covers any run missed over a holiday stretch. Already-stored days are
+          # skipped, so this is cheap when the cache warmed.
+          python -m asymmetry.cli backfill --days 30
+
+      - name: Cold-start backfill if the store was empty
+        run: |
+          python - <<'PY'
+          from asymmetry.storage import load_history
+          rows = len(load_history(days=400))
+          print(f"stored rows: {rows:,}")
+          # A warm cache holds hundreds of thousands of rows. Far below that means the
+          # cache missed and the factors would be computed from too little history.
+          if rows < 50_000:
+              print("store looks cold — running full backfill")
+              raise SystemExit(1)
+          PY
+        continue-on-error: true
+        id: warmcheck
+
+      - name: Full backfill (cold cache only)
+        if: steps.warmcheck.outcome == 'failure'
+        run: python -m asymmetry.cli backfill --days 400
+
+      - name: Settle open journal entries
+        run: python -m asymmetry.cli journal settle
+
+      - name: Generate brief and dashboard
+        env:
+          # Optional. With none set, catalyst scoring is skipped and the rest still runs —
+          # the brief says so rather than pretending the factor is present.
+          CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          REFRESH="--refresh"
+          if [ "${{ github.event.inputs.refresh_catalysts }}" = "false" ]; then
+            REFRESH="--no-refresh"
+          fi
+          python -m asymmetry.cli brief --html --top 10 $REFRESH
+
+      - name: Build static site
+        run: python -m asymmetry.cli site
+
+      - name: Publish
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add public/
+          if git diff --cached --quiet; then
+            echo "No change to publish (market holiday, or brief unchanged)."
+            exit 0
+          fi
+          git commit -m "Publish brief $(date -u +%Y-%m-%d)"
+          # Rebase before pushing: a manual commit may have landed while this ran.
+          git pull --rebase --autostash origin main
+          git push origin HEAD:main
+
+      - name: Upload brief as artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: brief-${{ github.run_number }}
+          path: |
+            data/briefs/*.md
+            data/briefs/*.html
+          retention-days: 30
+          if-no-files-found: warn

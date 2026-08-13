@@ -214,6 +214,15 @@ def journal_review(days: int = typer.Option(90, help="Look-back window.")) -> No
 
 
 @app.command()
+def site() -> None:
+    """Build the static site in public/ from every generated brief."""
+    from .report.site import build_site
+
+    path = build_site()
+    console.print(f"[green]Site built:[/] {path}")
+
+
+@app.command()
 def backtest(
     days: int = typer.Option(180, help="Calendar days back from the last stored day."),
     horizon: int = typer.Option(10, help="Forward holding period in trading days."),
