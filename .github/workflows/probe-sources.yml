@@ -132,8 +132,11 @@ jobs:
               print("Blocked from this runner:")
               for k in failed:
                   print(f"   - {k}: {results[k][1]}")
-          else:
-              print("VERDICT: every source reachable — cloud pipeline fully viable.")
+              # Exit non-zero so the run's own status answers the question. Without this
+              # the job goes green whatever happens, and a green run proves nothing.
+              sys.exit(1)
+
+          print("VERDICT: every source reachable — cloud pipeline fully viable.")
           PY
 
       - name: Publish results
