@@ -1,13 +1,15 @@
 name: Probe data sources
 
-# Answers one question before any deployment work is committed to: are the exchange
-# endpoints reachable from a CI runner at all?
+# Answers one question before any deployment work is committed to: which data sources are
+# reachable from a CI runner?
 #
 # This matters because www.nseindia.com already blocks the developer's own machine (403,
 # even with full browser headers), and exchange sites block datacenter ranges far more
-# aggressively than residential ones. GitHub runners are Azure datacenter IPs. If
-# nsearchives and BSE are blocked here, the whole cloud-pipeline design collapses and the
-# pipeline has to run locally, so this is worth proving rather than assuming.
+# aggressively than residential ones. GitHub runners are Azure datacenter IPs.
+#
+# Each source is a SEPARATE STEP on purpose: Actions logs require admin rights even on a
+# public repo, but per-step conclusions are readable from the public API. One step per
+# source therefore makes the result legible without granting anyone extra access.
 
 on:
   workflow_dispatch:
@@ -19,130 +21,113 @@ jobs:
   probe:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
 
-      - name: Install probe dependencies
-        run: pip install httpx
+      - run: pip install httpx
+        name: Install httpx
 
-      - name: Probe exchange and market-data endpoints
+      - name: "SOURCE nse-archives-universe"
+        continue-on-error: true
         run: |
-          python - <<'PY'
-          import httpx, json, sys, zipfile, io
+          python -c "
+          import httpx,sys
+          UA='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+          r=httpx.get('https://nsearchives.nseindia.com/content/indices/ind_nifty500list.csv',
+                      headers={'User-Agent':UA,'Referer':'https://www.nseindia.com/'},timeout=40)
+          print(r.status_code,len(r.content));sys.exit(0 if r.status_code==200 and len(r.content)>1000 else 1)"
 
-          UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36")
-          NSE_H = {"User-Agent": UA, "Referer": "https://www.nseindia.com/"}
-          BSE_H = {"User-Agent": UA, "Referer": "https://www.bseindia.com/corporates/ann.html",
-                   "Origin": "https://www.bseindia.com", "Accept": "application/json, text/plain, */*"}
+      - name: "SOURCE nse-archives-cm-bhavcopy"
+        continue-on-error: true
+        run: |
+          python -c "
+          import httpx,sys,io,zipfile
+          UA='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+          r=httpx.get('https://nsearchives.nseindia.com/content/cm/BhavCopy_NSE_CM_0_0_0_20260812_F_0000.csv.zip',
+                      headers={'User-Agent':UA,'Referer':'https://www.nseindia.com/'},timeout=40)
+          print(r.status_code,len(r.content))
+          zipfile.ZipFile(io.BytesIO(r.content)).namelist();sys.exit(0)"
 
-          results = {}
+      - name: "SOURCE nse-archives-fo-bhavcopy"
+        continue-on-error: true
+        run: |
+          python -c "
+          import httpx,sys,io,zipfile
+          UA='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+          r=httpx.get('https://nsearchives.nseindia.com/content/fo/BhavCopy_NSE_FO_0_0_0_20260812_F_0000.csv.zip',
+                      headers={'User-Agent':UA,'Referer':'https://www.nseindia.com/'},timeout=40)
+          print(r.status_code,len(r.content))
+          zipfile.ZipFile(io.BytesIO(r.content)).namelist();sys.exit(0)"
 
-          def probe(name, url, headers, params=None, check=None):
-              try:
-                  r = httpx.get(url, headers=headers, params=params, timeout=40,
-                                follow_redirects=True)
-                  ok = r.status_code == 200 and (check(r) if check else len(r.content) > 100)
-                  detail = f"HTTP {r.status_code}, {len(r.content):,} bytes"
-              except Exception as exc:
-                  ok, detail = False, f"{type(exc).__name__}: {str(exc)[:90]}"
-              results[name] = (ok, detail)
-              print(f"{'PASS' if ok else 'FAIL'}  {name:34} {detail}")
+      - name: "SOURCE nse-archives-mto-delivery"
+        continue-on-error: true
+        run: |
+          python -c "
+          import httpx,sys
+          UA='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+          r=httpx.get('https://nsearchives.nseindia.com/archives/equities/mto/MTO_12082026.DAT',
+                      headers={'User-Agent':UA,'Referer':'https://www.nseindia.com/'},timeout=40)
+          print(r.status_code,len(r.content));sys.exit(0 if r.status_code==200 and len(r.content)>1000 else 1)"
 
-          print("=" * 74)
-          print("Runner egress IP:")
-          try:
-              print("  ", httpx.get("https://api.ipify.org", timeout=20).text)
-          except Exception as exc:
-              print("   unknown:", exc)
-          print("=" * 74)
+      - name: "SOURCE bse-scrip-master"
+        continue-on-error: true
+        run: |
+          python -c "
+          import httpx,sys
+          UA='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+          H={'User-Agent':UA,'Referer':'https://www.bseindia.com/','Origin':'https://www.bseindia.com','Accept':'application/json, text/plain, */*'}
+          r=httpx.get('https://api.bseindia.com/BseIndiaAPI/api/ListofScripData/w',
+                      params={'Group':'','Scripcode':'','industry':'','segment':'Equity','status':'Active'},
+                      headers=H,timeout=60)
+          print(r.status_code,len(r.content));sys.exit(0 if r.status_code==200 and len(r.content)>10000 else 1)"
 
-          # The backbone: universe, EOD bars, option chain, delivery.
-          probe("NSE archives: universe CSV",
-                "https://nsearchives.nseindia.com/content/indices/ind_nifty500list.csv", NSE_H)
+      - name: "SOURCE bse-announcements"
+        continue-on-error: true
+        run: |
+          python -c "
+          import httpx,sys
+          UA='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+          H={'User-Agent':UA,'Referer':'https://www.bseindia.com/corporates/ann.html','Origin':'https://www.bseindia.com','Accept':'application/json, text/plain, */*'}
+          r=httpx.get('https://api.bseindia.com/BseIndiaAPI/api/AnnSubCategoryGetData/w',
+                      params={'pageno':1,'strCat':'Result','strPrevDate':'20260810','strToDate':'20260813',
+                              'strScrip':'','strSearch':'P','strType':'C','subcategory':'-1'},
+                      headers=H,timeout=60)
+          n=len(r.json().get('Table',[])) if r.status_code==200 else 0
+          print(r.status_code,'rows',n);sys.exit(0 if n>0 else 1)"
 
-          def zip_ok(r):
-              try:
-                  zipfile.ZipFile(io.BytesIO(r.content)).namelist()
-                  return True
-              except Exception:
-                  return False
+      - name: "SOURCE yahoo-index"
+        continue-on-error: true
+        run: |
+          python -c "
+          import httpx,sys
+          UA='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+          r=httpx.get('https://query1.finance.yahoo.com/v8/finance/chart/%5ENSEI',
+                      params={'range':'1mo','interval':'1d'},headers={'User-Agent':UA},timeout=40)
+          ok=r.status_code==200 and bool(r.json().get('chart',{}).get('result'))
+          print(r.status_code,ok);sys.exit(0 if ok else 1)"
 
-          probe("NSE archives: CM bhavcopy",
-                "https://nsearchives.nseindia.com/content/cm/BhavCopy_NSE_CM_0_0_0_20260812_F_0000.csv.zip",
-                NSE_H, check=zip_ok)
-          probe("NSE archives: FO bhavcopy (gamma)",
-                "https://nsearchives.nseindia.com/content/fo/BhavCopy_NSE_FO_0_0_0_20260812_F_0000.csv.zip",
-                NSE_H, check=zip_ok)
-          probe("NSE archives: MTO delivery",
-                "https://nsearchives.nseindia.com/archives/equities/mto/MTO_12082026.DAT", NSE_H)
+      - name: "SOURCE yahoo-equity"
+        continue-on-error: true
+        run: |
+          python -c "
+          import httpx,sys
+          UA='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+          r=httpx.get('https://query1.finance.yahoo.com/v8/finance/chart/RELIANCE.NS',
+                      params={'range':'1mo','interval':'1d'},headers={'User-Agent':UA},timeout=40)
+          ok=r.status_code==200 and bool(r.json().get('chart',{}).get('result'))
+          print(r.status_code,ok);sys.exit(0 if ok else 1)"
 
-          # Catalyst source.
-          probe("BSE: scrip master (ISIN join)",
-                "https://api.bseindia.com/BseIndiaAPI/api/ListofScripData/w", BSE_H,
-                params={"Group": "", "Scripcode": "", "industry": "", "segment": "Equity",
-                        "status": "Active"})
-          probe("BSE: announcements",
-                "https://api.bseindia.com/BseIndiaAPI/api/AnnSubCategoryGetData/w", BSE_H,
-                params={"pageno": 1, "strCat": "Result", "strPrevDate": "20260810",
-                        "strToDate": "20260813", "strScrip": "", "strSearch": "P",
-                        "strType": "C", "subcategory": "-1"},
-                check=lambda r: len(r.json().get("Table", [])) > 0)
+      - name: "SOURCE rss-economic-times"
+        continue-on-error: true
+        run: |
+          python -c "
+          import httpx,sys
+          UA='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+          r=httpx.get('https://economictimes.indiatimes.com/markets/rssfeeds/1977021501.cms',
+                      headers={'User-Agent':UA},timeout=40)
+          print(r.status_code,r.text.count('<item'));sys.exit(0 if r.text.count('<item')>0 else 1)"
 
-          # Intraday, indices and the macro panel.
-          probe("Yahoo: NIFTY daily",
-                "https://query1.finance.yahoo.com/v8/finance/chart/%5ENSEI",
-                {"User-Agent": UA}, params={"range": "1mo", "interval": "1d"},
-                check=lambda r: bool(r.json().get("chart", {}).get("result")))
-          probe("Yahoo: NSE stock (RELIANCE.NS)",
-                "https://query1.finance.yahoo.com/v8/finance/chart/RELIANCE.NS",
-                {"User-Agent": UA}, params={"range": "1mo", "interval": "1d"},
-                check=lambda r: bool(r.json().get("chart", {}).get("result")))
-
-          # News feeds.
-          probe("RSS: Economic Times markets",
-                "https://economictimes.indiatimes.com/markets/rssfeeds/1977021501.cms",
-                {"User-Agent": UA})
-
-          # Write results where they can be read without admin rights: Actions logs are
-          # private to repo admins even on a public repo, so the run's exit code would
-          # otherwise be the only visible output.
-          with open("probe-results.md", "w", encoding="utf-8") as fh:
-              fh.write("# Data source reachability from GitHub Actions\n\n")
-              fh.write("| Source | Result | Detail |\n| --- | --- | --- |\n")
-              for name, (ok, detail) in results.items():
-                  fh.write(f"| {name} | {'PASS' if ok else 'FAIL'} | {detail} |\n")
-
-          import os
-          summary = os.environ.get("GITHUB_STEP_SUMMARY")
-          if summary:
-              with open(summary, "a", encoding="utf-8") as fh:
-                  fh.write(open("probe-results.md", encoding="utf-8").read())
-
-          print("=" * 74)
-          # Everything is critical on this pass: the point is to learn exactly which
-          # endpoints a datacenter IP can reach, not to pass with a partial answer.
-          critical = list(results)
-          failed = [k for k in critical if not results[k][0]]
-
-          if failed:
-              print("Blocked from this runner:")
-              for k in failed:
-                  print(f"   - {k}: {results[k][1]}")
-              # Exit non-zero so the run's own status answers the question. Without this
-              # the job goes green whatever happens, and a green run proves nothing.
-              sys.exit(1)
-
-          print("VERDICT: every source reachable — cloud pipeline fully viable.")
-          PY
-
-      - name: Publish results
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: probe-results
-          path: probe-results.md
-          retention-days: 30
+      - name: "Runner egress IP (context)"
+        continue-on-error: true
+        run: python -c "import httpx;print(httpx.get('https://api.ipify.org',timeout=20).text)"
