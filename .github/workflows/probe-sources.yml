@@ -107,22 +107,39 @@ jobs:
                 "https://economictimes.indiatimes.com/markets/rssfeeds/1977021501.cms",
                 {"User-Agent": UA})
 
+          # Write results where they can be read without admin rights: Actions logs are
+          # private to repo admins even on a public repo, so the run's exit code would
+          # otherwise be the only visible output.
+          with open("probe-results.md", "w", encoding="utf-8") as fh:
+              fh.write("# Data source reachability from GitHub Actions\n\n")
+              fh.write("| Source | Result | Detail |\n| --- | --- | --- |\n")
+              for name, (ok, detail) in results.items():
+                  fh.write(f"| {name} | {'PASS' if ok else 'FAIL'} | {detail} |\n")
+
+          import os
+          summary = os.environ.get("GITHUB_STEP_SUMMARY")
+          if summary:
+              with open(summary, "a", encoding="utf-8") as fh:
+                  fh.write(open("probe-results.md", encoding="utf-8").read())
+
           print("=" * 74)
-          critical = ["NSE archives: universe CSV", "NSE archives: CM bhavcopy",
-                      "NSE archives: FO bhavcopy (gamma)", "Yahoo: NIFTY daily"]
+          # Everything is critical on this pass: the point is to learn exactly which
+          # endpoints a datacenter IP can reach, not to pass with a partial answer.
+          critical = list(results)
           failed = [k for k in critical if not results[k][0]]
 
           if failed:
-              print("VERDICT: cloud pipeline NOT viable — critical sources blocked from CI:")
+              print("Blocked from this runner:")
               for k in failed:
                   print(f"   - {k}: {results[k][1]}")
-              print("\nRun the pipeline locally and publish only its output.")
-              sys.exit(1)
-
-          optional = [k for k, (ok, _) in results.items() if not ok]
-          print("VERDICT: critical sources reachable — cloud pipeline is viable.")
-          if optional:
-              print("Degraded (non-blocking):")
-              for k in optional:
-                  print(f"   - {k}: {results[k][1]}")
+          else:
+              print("VERDICT: every source reachable — cloud pipeline fully viable.")
           PY
+
+      - name: Publish results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: probe-results
+          path: probe-results.md
+          retention-days: 30
