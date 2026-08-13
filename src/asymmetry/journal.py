@@ -137,7 +137,11 @@ def settle(horizon: int = 10) -> int:
     Uses the same conservative rule as the backtest: a bar touching both stop and target
     counts as a loss, because the intraday sequence is unknown.
     """
-    from .storage import load_history
+    from .storage import init_db, load_history
+
+    # The journal table may not exist yet on a fresh store (CI starts from an empty
+    # database), and querying a missing table raises rather than returning nothing.
+    init_db()
 
     history = load_history(days=400)
     if history.empty:
@@ -198,6 +202,9 @@ def settle(horizon: int = 10) -> int:
 
 
 def load_journal(days: int = 90) -> pd.DataFrame:
+    from .storage import init_db
+
+    init_db()
     cutoff = date.today() - timedelta(days=days)
     with Session(_engine()) as session:
         rows = session.exec(select(JournalEntry).where(JournalEntry.as_of >= cutoff)).all()

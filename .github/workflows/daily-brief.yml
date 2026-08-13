@@ -66,22 +66,27 @@ jobs:
           # skipped, so this is cheap when the cache warmed.
           python -m asymmetry.cli backfill --days 30
 
-      - name: Cold-start backfill if the store was empty
+      - name: Check whether the store holds enough history
         run: |
           python - <<'PY'
           from asymmetry.storage import load_history
-          rows = len(load_history(days=400))
-          print(f"stored rows: {rows:,}")
-          # A warm cache holds hundreds of thousands of rows. Far below that means the
-          # cache missed and the factors would be computed from too little history.
-          if rows < 50_000:
-              print("store looks cold — running full backfill")
+
+          history = load_history(days=400)
+          sessions = history["date"].nunique() if not history.empty else 0
+          print(f"stored trading sessions: {sessions}")
+
+          # Count SESSIONS, not rows. The 30-day incremental backfill alone yields ~73k
+          # rows — comfortably past any row threshold — so a row count would report a
+          # 30-day store as warm and the factors would then be computed against far too
+          # little history. The 52-week high and 200-day EMA need roughly a year.
+          if sessions < 200:
+              print("insufficient history — full backfill required")
               raise SystemExit(1)
           PY
         continue-on-error: true
         id: warmcheck
 
-      - name: Full backfill (cold cache only)
+      - name: Full backfill (insufficient history only)
         if: steps.warmcheck.outcome == 'failure'
         run: python -m asymmetry.cli backfill --days 400
 

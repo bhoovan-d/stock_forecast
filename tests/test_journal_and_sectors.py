@@ -173,3 +173,22 @@ def test_journal_entry_defaults_are_unacted():
     assert entry.action == "none"
     assert entry.outcome == "open"
     assert entry.realised_r is None
+
+
+def test_journal_functions_work_on_a_fresh_database(tmp_path, monkeypatch):
+    """Journal reads must not assume the table already exists.
+
+    CI starts from an empty store, and `journal settle` failed there because querying a
+    missing table raises rather than returning nothing.
+    """
+    from sqlmodel import create_engine
+
+    from asymmetry import journal, storage
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'fresh.db'}")
+    monkeypatch.setattr(storage, "_engine", engine)
+    monkeypatch.setattr(journal, "_engine", lambda: engine)
+
+    # Neither call may raise on a database where nothing has been created yet.
+    assert journal.settle() == 0
+    assert journal.load_journal().empty
