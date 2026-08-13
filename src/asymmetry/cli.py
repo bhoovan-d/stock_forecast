@@ -105,26 +105,59 @@ def doctor() -> None:
 
 
 @app.command()
-def auth() -> None:
-    """Print Upstox login instructions. You obtain the token yourself."""
-    from .data import upstox
+def auth(
+    manual: bool = typer.Option(
+        False, "--manual", help="Print the steps instead of running the browser flow."
+    ),
+) -> None:
+    """Log in to Upstox and store today's access token.
 
-    console.print("[bold]Upstox token refresh[/]\n")
+    The whole flow runs locally: your browser, a loopback redirect, and a direct call from
+    this machine to Upstox. No credential is sent anywhere else.
+    """
+    from .config import settings as cfg
+    from .data import MarketData, upstox
+    from .data.upstox_auth import login
+
+    console.print("[bold]Upstox access token[/]")
     console.print(
-        "Upstox access tokens expire daily (~03:30 IST). This tool never handles your\n"
-        "credentials — you log in yourself and paste the resulting token into .env.\n"
+        "[dim]Tokens expire daily around 03:30 IST - this is a routine refresh.[/]\n"
     )
-    url = upstox.auth_url()
-    if url is None:
-        console.print("[yellow]Set UPSTOX_API_KEY in .env first.[/]")
-        console.print("Create an app at https://account.upstox.com/developer/apps")
-        return
-    console.print("1. Open this URL in your browser and log in:\n")
-    console.print(f"   [cyan]{url}[/]\n")
-    console.print("2. After redirect, copy the `code` query parameter from the URL.")
-    console.print("3. Exchange it for a token (Upstox docs: /v2/login/authorization/token).")
-    console.print("4. Paste the token into .env as UPSTOX_ACCESS_TOKEN, then run `asymmetry doctor`.")
 
+    if not cfg.upstox_api_key or not cfg.upstox_api_secret:
+        console.print("[yellow]No app credentials yet. One-time setup:[/]\n")
+        console.print("  1. Open [cyan]https://account.upstox.com/developer/apps[/]")
+        console.print("  2. Create an app. Set its Redirect URL to exactly:")
+        console.print(f"     [cyan]{cfg.upstox_redirect_uri}[/]")
+        console.print("  3. Copy the API key and secret into [bold].env[/]:\n")
+        console.print("     UPSTOX_API_KEY=your_key")
+        console.print("     UPSTOX_API_SECRET=your_secret\n")
+        console.print("  4. Run [bold]asymmetry auth[/] again.")
+        return
+
+    if manual:
+        console.print("1. Open this URL and log in:\n")
+        console.print(f"   [cyan]{upstox.auth_url()}[/]\n")
+        console.print("2. After the redirect, copy the `code` query parameter.")
+        console.print("3. POST it to /v2/login/authorization/token with your key and secret.")
+        console.print("4. Put the returned token in .env as UPSTOX_ACCESS_TOKEN.\n")
+        console.print(
+            "[dim]Running `asymmetry auth` without --manual does all of this for you.[/]"
+        )
+        return
+
+    if login() is None:
+        console.print("\n[red]Login failed.[/] See the messages above.")
+        raise typer.Exit(1)
+
+    console.print("\n[green]Token stored in .env.[/] Verifying...\n")
+    if MarketData().live_available:
+        console.print("[green]Live tier active.[/] Briefs will now use real-time data.")
+    else:
+        console.print(
+            "[yellow]Token stored, but the API did not accept it.[/] "
+            "Check the app's Redirect URL matches .env exactly."
+        )
 
 @app.command()
 def backfill(

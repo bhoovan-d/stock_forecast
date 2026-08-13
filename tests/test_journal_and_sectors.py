@@ -192,3 +192,46 @@ def test_journal_functions_work_on_a_fresh_database(tmp_path, monkeypatch):
     # Neither call may raise on a database where nothing has been created yet.
     assert journal.settle() == 0
     assert journal.load_journal().empty
+
+
+# ── Upstox token handling ─────────────────────────────────────────────────────
+
+
+def test_env_update_replaces_rather_than_appends(tmp_path):
+    """Refreshing the daily token must not accumulate duplicate keys.
+
+    Appending would leave several UPSTOX_ACCESS_TOKEN lines that shadow each other
+    unpredictably, so a stale token could win after a successful refresh.
+    """
+    from asymmetry.data.upstox_auth import update_env
+
+    env = tmp_path / ".env"
+    env.write_text(
+        "GROQ_API_KEY=keep-me\nUPSTOX_ACCESS_TOKEN=old\nCEREBRAS_API_KEY=keep-me-too\n",
+        encoding="utf-8",
+    )
+
+    update_env("fresh", env)
+    lines = env.read_text(encoding="utf-8").splitlines()
+
+    assert lines.count("UPSTOX_ACCESS_TOKEN=fresh") == 1
+    assert sum(l.startswith("UPSTOX_ACCESS_TOKEN=") for l in lines) == 1
+    # Unrelated keys survive untouched.
+    assert "GROQ_API_KEY=keep-me" in lines
+    assert "CEREBRAS_API_KEY=keep-me-too" in lines
+
+
+def test_env_update_creates_the_file_when_absent(tmp_path):
+    from asymmetry.data.upstox_auth import update_env
+
+    env = tmp_path / ".env"
+    update_env("brand-new", env)
+    assert env.read_text(encoding="utf-8").strip() == "UPSTOX_ACCESS_TOKEN=brand-new"
+
+
+def test_redirect_port_is_parsed_from_the_uri():
+    from asymmetry.data.upstox_auth import _port_from
+
+    assert _port_from("http://localhost:8080/callback") == 8080
+    assert _port_from("http://127.0.0.1:9999/cb") == 9999
+    assert _port_from("http://localhost/callback") == 80
