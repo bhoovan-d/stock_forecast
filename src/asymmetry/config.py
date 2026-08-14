@@ -55,20 +55,55 @@ class Settings(BaseSettings):
     min_median_volume: float = 50_000
     liquidity_lookback_days: int = 20
 
-    # ── Selection weights (Engine 3) ──────────────────────────────────────────
-    # Catalyst is weighted highest by design: the brief calls for most effort there.
-    weight_catalyst: float = 0.35
-    weight_relative_strength: float = 0.25
-    weight_price_structure: float = 0.20
-    weight_volume: float = 0.15
-    weight_liquidity: float = 0.05
+    # ── Master scoring weights (Engineer Brief §17) ───────────────────────────
+    # Engineering defaults, explicitly *not* claimed optimal. The brief is emphatic that
+    # these may only be changed by walk-forward testing, and never tuned on the final test
+    # period.
+    weight_catalyst: float = 0.20          # why now
+    weight_structure: float = 0.15         # daily/weekly structural quality
+    weight_relative_strength: float = 0.15 # leadership, incl. RS acceleration
+    weight_sector: float = 0.10            # sector/peer confirmation
+    weight_volume: float = 0.10            # demand confirmation
+    weight_volatility: float = 0.10        # compression -> expansion, move potential
+    weight_fno: float = 0.10               # derivative confirmation
+    weight_entry_quality: float = 0.05     # 15m/30m trigger quality
+    weight_regime: float = 0.05            # environment
 
-    # ── Trade engine (Engine 5) ───────────────────────────────────────────────
-    # The non-negotiable gate. A plan below this R is not emitted at all.
-    min_reward_risk: float = 2.0
+    # ── Hard gates (Engineer Brief §1, §13, §18) ──────────────────────────────
+    # Both are non-negotiable rejections, not score penalties. A setup failing either is
+    # not downgraded — it is refused.
+    min_reward_risk: float = 4.0
+    # The legacy daily-screening brief keeps its own, looser gate. The two engines answer
+    # different questions — the screen surveys the market, the specification hunts a rare
+    # asymmetric setup — and sharing one constant would silently retune the screen (and the
+    # deployed CI brief) every time the specification is adjusted.
+    screen_min_reward_risk: float = 2.0
+    # Maximum initial stop distance as a percentage of entry. If the technically valid
+    # invalidation sits further away, the setup is REJECTED; the stop is never tightened
+    # to manufacture the R multiple.
+    max_stop_pct: float = 1.4
+    # Holding horizon in trading sessions.
+    min_holding_sessions: int = 1
+    max_holding_sessions: int = 5
+
     risk_budget_inr: float = 5000.0
     atr_period: int = 14
     atr_stop_multiple: float = 1.5
+
+    # ── Costs, for expected value (Brief §16) ─────────────────────────────────
+    # Round-trip cost as a fraction of turnover: brokerage, STT, exchange and stamp duty,
+    # GST. EV that ignores these systematically overstates the edge.
+    cost_roundtrip_pct: float = 0.12
+    slippage_pct: float = 0.05
+    # Probability that an overnight gap executes the stop worse than its stated price.
+    gap_risk_pct: float = 0.15
+
+    # ── Resistance clearance (Brief §14, §18) ─────────────────────────────────
+    # A 4R target sitting beyond major resistance is only accepted when the model assigns
+    # at least this probability to clearing that level.
+    min_resistance_clearance_prob: float = 0.35
+    # Resistance within this fraction of the move to target counts as "before" the target.
+    resistance_lookback_weeks: int = 104
 
     # ── Macro fair value (Engine 4) ───────────────────────────────────────────
     macro_lookback_days: int = 250

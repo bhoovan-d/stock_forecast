@@ -303,13 +303,22 @@ def build_scores(
         ):
             continue
 
+        # Pre-ranking blend, used to decide which names are worth the expensive
+        # multi-timeframe pass. Liquidity is deliberately absent: the brief treats it as an
+        # execution constraint, already enforced as a hard gate above, not as a score that
+        # can offset a weak setup.
+        weights_sum = (
+            settings.weight_relative_strength
+            + settings.weight_volume
+            + settings.weight_structure
+            + settings.weight_catalyst
+        )
         total = (
             settings.weight_relative_strength * factors.relative_strength
             + settings.weight_volume * np.nan_to_num(factors.volume, nan=50.0)
-            + settings.weight_price_structure * factors.price_structure
+            + settings.weight_structure * factors.price_structure
             + settings.weight_catalyst * factors.catalyst
-            + settings.weight_liquidity * np.nan_to_num(factors.liquidity, nan=50.0)
-        )
+        ) / weights_sum
         rows.append((symbol, factors, float(total)))
 
     rows.sort(key=lambda r: r[2], reverse=True)

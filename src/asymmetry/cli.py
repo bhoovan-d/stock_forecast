@@ -247,6 +247,67 @@ def journal_review(days: int = typer.Option(90, help="Look-back window.")) -> No
 
 
 @app.command()
+def spec(
+    on: str = typer.Option(None, "--date", help="Trading date (YYYY-MM-DD), default latest."),
+    evaluate: int = typer.Option(
+        30, help="How many pre-ranked names get the full multi-timeframe pass."
+    ),
+    refresh: bool = typer.Option(
+        False, "--refresh/--no-refresh", help="Re-score news and filings via LLM."
+    ),
+    refresh_rates: bool = typer.Option(
+        False, "--refresh-rates", help="Recompute historical base rates (~45s)."
+    ),
+) -> None:
+    """Engineer Brief scan: 4R minimum, 1.4% max stop, 1-5 session horizon."""
+    from .engines.spec_engine import run_spec_scan
+    from .report.spec_report import write_spec_brief
+
+    target = date.fromisoformat(on) if on else None
+    scan = run_spec_scan(
+        target, max_evaluate=evaluate, refresh_catalysts=refresh,
+        refresh_rates=refresh_rates,
+    )
+
+    table = Table(title=f"Specification scan — {scan.as_of}", header_style="bold")
+    table.add_column("Verdict")
+    table.add_column("Count", justify="right")
+    table.add_row("[green]TRADE[/]", str(len(scan.trades)))
+    table.add_row("[yellow]WATCH[/]", str(len(scan.watch)))
+    table.add_row("[red]REJECT[/]", str(scan.total_rejected))
+    console.print(table)
+
+    if scan.reject_counts:
+        reasons = Table(title="Why candidates failed", header_style="bold", box=None)
+        reasons.add_column("Reason")
+        reasons.add_column("n", justify="right")
+        for reason, count in sorted(scan.reject_counts.items(), key=lambda kv: -kv[1]):
+            reasons.add_row(reason, str(count))
+        console.print(reasons)
+
+    for candidate in scan.trades:
+        plan = candidate.plan
+        console.print(
+            f"\n[bold green]TRADE[/] [bold]{candidate.symbol}[/] — {candidate.why_now}\n"
+            f"  entry {plan.entry:,.2f} · stop {plan.stop:,.2f} ({plan.stop_pct:.2f}%) · "
+            f"target {plan.target_4r:,.2f} (+{plan.target_pct:.1f}%)\n"
+            f"  P(5d)={candidate.probability.p_5d:.0%} · "
+            f"EV={candidate.expected_value.ev_r:+.2f}R · qty {plan.quantity}"
+        )
+
+    if not scan.trades:
+        console.print(
+            "\n[yellow]Nothing qualified.[/] "
+            f"[dim]A {settings.min_reward_risk:.0f}R target with a "
+            f"{settings.max_stop_pct:.1f}% stop needs a "
+            f"{settings.min_reward_risk * settings.max_stop_pct:.1f}% move in five "
+            "sessions — most days produce nothing, by design.[/]"
+        )
+
+    console.print(f"\n[green]Written:[/] {write_spec_brief(scan)}")
+
+
+@app.command()
 def site() -> None:
     """Build the static site in public/ from every generated brief."""
     from .report.site import build_site

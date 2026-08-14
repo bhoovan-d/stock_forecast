@@ -211,3 +211,61 @@ can exhaust — the cascade then falls through to Cerebras and Gemini automatica
 
 This is a screening and analysis tool. It surfaces candidates and levels for your own
 judgement; it does not predict outcomes, and no output here is a recommendation to trade.
+
+---
+
+## Engineer Brief specification engine
+
+A second, much stricter engine implementing `Asymmetry_Engine_Engineer_Brief.docx`:
+
+```bash
+uv run asymmetry spec --evaluate 30
+```
+
+| | Daily screen (`brief`) | Specification (`spec`) |
+| --- | --- | --- |
+| Minimum R:R | 2.0 | **4.0** |
+| Max initial stop | none | **1.4% of entry** |
+| Horizon | ~5–15 sessions | **1–5 sessions** |
+| Timeframes | daily | **Weekly → Daily → 60m → 30m → 15m** |
+| Output | ranked shortlist | **TRADE / WATCH / REJECT** |
+
+The two engines keep separate gates (`min_reward_risk` vs `screen_min_reward_risk`) so
+tuning the specification never silently retunes the deployed daily brief.
+
+### What the specification measures about itself
+
+At 4R, break-even is a 20% win rate. Measured over ~4,800 historical setups using the
+spec's own geometry — a 1.4% stop, a 4R target, resolved bar by bar with ambiguous bars
+booked as losses:
+
+| | |
+| --- | --: |
+| P(4R within 5 sessions) | **15.8%** |
+| P(timeout) | 8.0% |
+| Break-even win rate at 4R | 20.0% |
+| Round-trip costs | ~0.18R |
+
+**So the unconditional base rate is below break-even**, and the engine correctly refuses to
+emit trades: a live scan returns 0 TRADE, with candidates landing at P(win) 6–21% against
+the ~24% needed after costs.
+
+That is the specification working as designed — §18 is explicit that a minimum number of
+trades must never be forced. It is also an honest finding about the parameters: 4R against
+a 1.4% stop is close to, but currently under, the line.
+
+The open question is whether setups selected by the *full* chain — HTF alignment, fresh
+catalyst, compression, genuine F&O participation — beat the unconditional base rate enough
+to clear it. The probability model does not yet condition on those features, so this is not
+yet proven either way. Resolving it needs labelled outcomes for spec-qualified setups,
+which accumulate as the engine runs.
+
+### Known data gaps
+
+- **Consensus estimates are unavailable** on free sources, so §7's forward-revision and
+  surprise-magnitude engine is not implemented. Earnings are detected as events, not scored
+  against consensus.
+- **15m/30m history is capped at ~81 days** by the upstream feed, which bounds intraday
+  backtesting. 60m reaches ~3 years, weekly 5 years.
+- Probability base rates are measured on **daily bars**, so they approximate a
+  15-minute-triggered reality — erring pessimistic, since same-bar ambiguity books a loss.

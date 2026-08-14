@@ -8,3 +8,10 @@ data/briefs/
 data/logs/
 .pytest_cache/
 .coverage
+
+# scratch run logs
+spec_cli.txt
+spec_run.txt
+
+# source brief (input document, not code)
+*.docx

@@ -69,7 +69,7 @@ def test_no_plan_below_gate_is_ever_emitted():
             continue
 
         emitted += 1
-        assert plan.reward_risk >= settings.min_reward_risk
+        assert plan.reward_risk >= settings.screen_min_reward_risk
         assert plan.stop < plan.entry < plan.target
         # The reported R:R must match the levels it was derived from.
         recomputed = (plan.target - plan.entry) / (plan.entry - plan.stop)

@@ -184,8 +184,12 @@ def build_plan(
     target, target_label = _target_from_structure(daily, entry, day_atr)
     reward_risk = (target - entry) / risk
 
-    if reward_risk < settings.min_reward_risk:
-        return None, f"R:R 1:{reward_risk:.1f} below {settings.min_reward_risk:.1f} gate"
+    # The screening gate, deliberately separate from the specification's 4R. See
+    # config.screen_min_reward_risk for why the two must not share a constant.
+    if reward_risk < settings.screen_min_reward_risk:
+        return None, (
+            f"R:R 1:{reward_risk:.1f} below {settings.screen_min_reward_risk:.1f} gate"
+        )
 
     quantity = int(settings.risk_budget_inr // risk)
 
