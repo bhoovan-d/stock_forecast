@@ -41,7 +41,8 @@ def render_v3(scan: V3Scan) -> Group:
     funnel.add_row("NIFTY 500 liquid", str(scan.liquid))
     funnel.add_row("showing a V3 setup", str(scan.with_setup))
     funnel.add_row("intraday-evaluated", str(scan.evaluated))
-    funnel.add_row("[bold]qualified[/]", f"[bold]{len(scan.trades)}[/]")
+    funnel.add_row("cleared the quality floor", str(scan.cleared_floor))
+    funnel.add_row("[bold]shown today[/]", f"[bold]{len(scan.trades)}[/]")
     parts.append(funnel)
 
     if scan.reject_counts:
@@ -165,7 +166,8 @@ def build_v3_markdown(scan: V3Scan) -> str:
         f"| NIFTY 500 liquid | {scan.liquid} |",
         f"| Showing a V3 setup | {scan.with_setup} |",
         f"| Intraday-evaluated | {scan.evaluated} |",
-        f"| **Qualified** | **{len(scan.trades)}** |",
+        f"| Cleared the quality floor | {scan.cleared_floor} |",
+        f"| **Shown today** | **{len(scan.trades)}** |",
         "",
     ]
 
@@ -175,7 +177,12 @@ def build_v3_markdown(scan: V3Scan) -> str:
             lines.append(f"| {name} | {count} |")
         lines.append("")
 
-    lines += ["---", "", f"## Qualified setups — {len(scan.trades)}", ""]
+    lines += [
+        "---", "", f"## Today's setups — {len(scan.trades)}", "",
+        f"*{scan.cleared_floor} cleared the quality floor; the best "
+        f"{len(scan.trades)} are shown. V3 targets ~10–15 a month, so the cap demotes the "
+        "rest to the watch list rather than widening the output.*", "",
+    ]
     if not scan.trades:
         lines += [
             "**Nothing qualified today.**",

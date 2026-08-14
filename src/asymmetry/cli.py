@@ -319,6 +319,9 @@ def v3(
     min_score: float = typer.Option(
         0.0, help="Override the regime-derived quality threshold."
     ),
+    per_day: int = typer.Option(
+        2, help="Max setups shown per day (V3 targets ~10-15/month). 0 = uncapped."
+    ),
 ) -> None:
     """Specification V3 scan: NIFTY 500, long + short, 4R, 0.5-1.5% stop."""
     from .engines.v3_scan import run_v3_scan
@@ -326,7 +329,8 @@ def v3(
 
     target = date.fromisoformat(on) if on else None
     scan = run_v3_scan(
-        target, max_intraday=limit, refresh_catalysts=refresh, min_score=min_score
+        target, max_intraday=limit, refresh_catalysts=refresh, min_score=min_score,
+        max_per_day=per_day,
     )
     console.print(render_v3(scan))
     console.print(f"\n[green]Written:[/] {write_v3_brief(scan)}")

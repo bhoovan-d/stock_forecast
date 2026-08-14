@@ -87,6 +87,8 @@ class V3Scan:
     evaluated: int = 0
     trades: list[V3Candidate] = field(default_factory=list)
     near_miss: list[V3Candidate] = field(default_factory=list)
+    # How many cleared the quality floor before the daily cap was applied.
+    cleared_floor: int = 0
     reject_counts: dict[str, int] = field(default_factory=dict)
     tier: str = ""
 
@@ -213,6 +215,7 @@ def run_v3_scan(
     use_catalyst: bool = True,
     refresh_catalysts: bool = False,
     min_score: float = 0.0,
+    max_per_day: int = 2,
 ) -> V3Scan:
     """Full V3 scan across the NIFTY 500."""
     from ..storage import load_history
@@ -236,8 +239,14 @@ def run_v3_scan(
     scan.regime = regime.verdict.value
     scan.regime_note = f"{regime.verdict.headline} (score {regime.total:+d})"
     # V3 §3: regime changes the quality threshold, it does not generate trades.
-    threshold = min_score or {"aggressive": 55.0, "selective": 62.0, "defensive": 68.0}.get(
-        regime.verdict.value, 62.0
+    #
+    # These floors are set from the observed score distribution, not by taste. On a live
+    # scan of 269 candidates the scores ran 55–81 with a median of 65, so a floor in the
+    # 50s admitted 180 names — against a specification asking for 10–15 a *month*. §17 is
+    # explicit that the response to too many qualifiers is a higher threshold, never a
+    # larger output.
+    threshold = min_score or {"aggressive": 72.0, "selective": 76.0, "defensive": 80.0}.get(
+        regime.verdict.value, 76.0
     )
 
     catalyst_scores: dict[str, float] = {}
@@ -336,6 +345,21 @@ def run_v3_scan(
     scan.trades.sort(key=lambda c: -c.score)
     scan.near_miss.sort(key=lambda c: -c.score)
 
+    # §17 selectivity: even above the floor, only the day's very best are shown. V3 targets
+    # ~10-15 setups a month — roughly one every other session — so anything beyond the cap
+    # is demoted rather than published. Nothing is hidden: the count that cleared the floor
+    # is reported, and the demoted names appear on the watch list.
+    scan.cleared_floor = len(scan.trades)
+    if max_per_day > 0 and len(scan.trades) > max_per_day:
+        for demoted in scan.trades[max_per_day:]:
+            demoted.rejected_by = "daily cap"
+            demoted.reject_detail = (
+                f"score {demoted.score:.1f} cleared the floor but was not in today's top "
+                f"{max_per_day}"
+            )
+        scan.near_miss = scan.trades[max_per_day:] + scan.near_miss
+        scan.trades = scan.trades[:max_per_day]
+
     # Stage 3: the 60m read, fetched only for names that actually qualified. It enriches the
     # report rather than deciding anything, so paying for it earlier would be waste.
     for candidate in scan.trades:
@@ -350,7 +374,7 @@ def run_v3_scan(
 
     logger.info(
         f"[v3] {scan.evaluated} evaluated in {time.time() - started:.0f}s → "
-        f"{len(scan.trades)} qualified (threshold {threshold:.0f}), "
-        f"{len(scan.near_miss)} near miss, {scan.rejected} rejected"
+        f"{scan.cleared_floor} cleared the floor ({threshold:.0f}), "
+        f"showing top {len(scan.trades)}, {scan.rejected} failed a hard filter"
     )
     return scan
