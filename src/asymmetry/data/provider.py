@@ -68,8 +68,20 @@ class MarketData:
 
     @property
     def session_tier(self) -> DataTier:
-        """Worst tier used so far — what the brief header reports."""
-        return min(self._tiers_used) if self._tiers_used else DataTier.UNAVAILABLE
+        """Worst tier that actually *served* data — what the brief header reports.
+
+        Failed fetches are excluded deliberately. A single optional miss — today's option
+        chain before the exchange publishes it, say — would otherwise drag the whole run to
+        UNAVAILABLE and tell the reader their brief was built on nothing, when in fact
+        every price came from the archive. Misses are counted separately so they are still
+        visible without mislabelling the tier.
+        """
+        served = [t for t in self._tiers_used if t > DataTier.UNAVAILABLE]
+        return min(served) if served else DataTier.UNAVAILABLE
+
+    @property
+    def failed_fetches(self) -> int:
+        return sum(1 for t in self._tiers_used if t is DataTier.UNAVAILABLE)
 
     def _record(self, tier: DataTier) -> DataTier:
         self._tiers_used.append(tier)

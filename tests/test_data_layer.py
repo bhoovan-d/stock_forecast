@@ -106,3 +106,30 @@ def test_archive_universe_is_reachable():
         pytest.skip("NSE archives unreachable from this environment")
     assert len(frame) >= 45
     assert {"symbol", "company", "sector", "isin"} <= set(frame.columns)
+
+
+def test_session_tier_ignores_failed_fetches():
+    """One optional miss must not relabel a whole run as UNAVAILABLE.
+
+    A spec scan reported "Data tier: UNAVAILABLE" because that day's option chain was not
+    yet published, even though every price had come from the archive — which tells the
+    reader their brief was built on nothing.
+    """
+    from asymmetry.data.provider import MarketData
+
+    data = MarketData()
+    data._record(DataTier.ARCHIVE)
+    data._record(DataTier.UNAVAILABLE)   # optional fetch that failed
+    data._record(DataTier.DELAYED)
+
+    assert data.session_tier is DataTier.DELAYED
+    assert data.failed_fetches == 1
+
+
+def test_session_tier_is_unavailable_only_when_nothing_served():
+    from asymmetry.data.provider import MarketData
+
+    data = MarketData()
+    assert data.session_tier is DataTier.UNAVAILABLE
+    data._record(DataTier.UNAVAILABLE)
+    assert data.session_tier is DataTier.UNAVAILABLE
