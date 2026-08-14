@@ -55,6 +55,33 @@ class Settings(BaseSettings):
     min_median_volume: float = 50_000
     liquidity_lookback_days: int = 20
 
+    # ── V3 scoring weights (Spec V3 §16) ──────────────────────────────────────
+    # Seven factors, six at 15% and volatility at 10%. Sector leadership is a *scoring*
+    # factor here, not a gate: V3 §16 names the hard filters explicitly as 4R, stop
+    # distance, liquidity and basic technical validity, and nothing else may reject.
+    v3_weight_rs_nifty: float = 0.15
+    v3_weight_rs_sector: float = 0.15
+    v3_weight_sector_leadership: float = 0.15
+    v3_weight_structure: float = 0.15
+    v3_weight_entry_quality: float = 0.15
+    v3_weight_catalyst: float = 0.15
+    v3_weight_volatility: float = 0.10
+
+    # Composite relative strength (V3 §6): level *and* direction of strength, so a stock
+    # with high but deteriorating RS ranks below one that is high and accelerating.
+    rs_weight_vs_nifty: float = 0.40
+    rs_weight_vs_sector: float = 0.35
+    rs_weight_acceleration: float = 0.25
+
+    # ── V3 hard filters (§1, §13) ─────────────────────────────────────────────
+    # A *range*, not just a ceiling. Below the floor the "stop" sits inside normal noise
+    # and is not an invalidation level at all.
+    min_stop_pct: float = 0.5
+    v3_max_stop_pct: float = 1.5
+    # Selectivity target (§17). Exceeding it means raising the threshold, never loosening
+    # the 4R or stop requirements.
+    target_setups_per_month: int = 15
+
     # ── Master scoring weights (Engineer Brief §17) ───────────────────────────
     # Engineering defaults, explicitly *not* claimed optimal. The brief is emphatic that
     # these may only be changed by walk-forward testing, and never tuned on the final test

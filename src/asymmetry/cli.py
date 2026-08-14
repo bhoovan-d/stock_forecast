@@ -308,6 +308,31 @@ def spec(
 
 
 @app.command()
+def v3(
+    on: str = typer.Option(None, "--date", help="Trading date (YYYY-MM-DD), default latest."),
+    limit: int = typer.Option(
+        0, help="Cap the intraday pass. 0 = evaluate every candidate (recommended)."
+    ),
+    refresh: bool = typer.Option(
+        False, "--refresh/--no-refresh", help="Re-score news and filings via LLM."
+    ),
+    min_score: float = typer.Option(
+        0.0, help="Override the regime-derived quality threshold."
+    ),
+) -> None:
+    """Specification V3 scan: NIFTY 500, long + short, 4R, 0.5-1.5% stop."""
+    from .engines.v3_scan import run_v3_scan
+    from .report.v3_report import render_v3, write_v3_brief
+
+    target = date.fromisoformat(on) if on else None
+    scan = run_v3_scan(
+        target, max_intraday=limit, refresh_catalysts=refresh, min_score=min_score
+    )
+    console.print(render_v3(scan))
+    console.print(f"\n[green]Written:[/] {write_v3_brief(scan)}")
+
+
+@app.command()
 def site() -> None:
     """Build the static site in public/ from every generated brief."""
     from .report.site import build_site

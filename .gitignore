@@ -15,3 +15,6 @@ spec_run.txt
 
 # source brief (input document, not code)
 *.docx
+
+v3_run.txt
+v3_final.txt
