@@ -182,16 +182,16 @@ def evaluate_symbol(
         candidate.probability, settings.min_reward_risk
     )
 
-    # EV is the ranking layer, but a negative-EV trade is still refused (§16, §18).
+    # EV ranks; it does not gate. §16 calls it "the ranking layer after the gate", and
+    # §18's rejection list does not include negative EV. A candidate that cleared every
+    # hard filter is therefore a TRADE, ordered by EV, with the number shown so a marginal
+    # one is obvious rather than hidden.
+    candidate.verdict = Verdict.TRADE
     if not candidate.expected_value.positive:
-        candidate.verdict = Verdict.WATCH
         candidate.reject_reason = RejectReason.NEGATIVE_EV
         candidate.reject_detail = (
-            f"EV {candidate.expected_value.ev_r:+.2f}R — "
-            f"{candidate.expected_value.note}"
+            f"EV {candidate.expected_value.ev_r:+.2f}R — {candidate.expected_value.note}"
         )
-    else:
-        candidate.verdict = Verdict.TRADE
 
     # ── Master score (§17) ────────────────────────────────────────────────────
     feasibility, feasibility_note = move_feasibility(volatility, plan.target_pct)

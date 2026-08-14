@@ -214,6 +214,59 @@ judgement; it does not predict outcomes, and no output here is a recommendation 
 
 ---
 
+## Specification V3 — the current engine
+
+`NIFTY 500 Asymmetry Engine.pdf` supersedes the earlier docx brief. Both directions, a stop
+*band* rather than a ceiling, and roughly 10–15 setups a **month** rather than a daily list.
+
+```bash
+uv run asymmetry v3                      # full NIFTY 500 scan, ~6 min
+uv run asymmetry v3 --setup reclaim      # only the setup that tested positive
+uv run asymmetry v3-backtest             # does any of it actually pay?
+```
+
+| | Daily screen | Engineer Brief | **V3** |
+| --- | --- | --- | --- |
+| Direction | long | long | **long + short** |
+| Minimum R:R | 2.0 | 4.0 | **4.0** |
+| Stop | none | ≤1.4% | **0.5–1.5% band** |
+| Output | shortlist | daily | **~10–15 / month** |
+| Setups | breakout | generic | **sweep + flag only** |
+
+Selection follows V3's hierarchy — right market → right sector → right stock → right time →
+right risk/reward — with sector leadership as a **15% score, not a gate**. §16 names the
+hard filters exactly (4R, stop distance, liquidity, technical validity) and nothing else may
+reject. Gating on sector is what made an earlier build discard valid candidates.
+
+Stage 1 screens all 473 liquid names from stored bars in ~20s with **zero network calls**
+(weekly is resampled from daily). Only the survivors pay for intraday data.
+
+### Does V3 work? Measured on real 15-minute triggers
+
+`v3-backtest` replays the engine's own entries — same `detect_setup`, same `build_v3_plan` —
+resolved on 15-minute bars, with a bar touching both stop and target booked as a loss:
+
+| Setup | n | Win rate | Mean R |
+| --- | --: | --: | --: |
+| **Liquidity sweep (reclaim)** | 461 | **26%** | **+0.32R** |
+| High-tight flag (continuation) | 1,178 | 5% | −0.76R |
+| *Break-even at 4R* | | *20%* | *0* |
+
+**The two setups are not equivalent.** The liquidity sweep clears break-even and stays
+positive after ~0.17R of costs. The flag, as implemented, does not come close — and since it
+generates the majority of signals, the blended result (10.5%, −0.62R net) is dominated by
+it.
+
+Use `--setup reclaim` to run only the one with measured support. The flag detector is kept
+because the failure may be my implementation rather than the pattern, but it should not be
+traded on this evidence.
+
+Caveat that matters: intraday history is capped at ~60–80 days upstream, so this is one
+market regime and a few thousand trades. It measures the right thing on limited data, rather
+than the wrong thing on plenty.
+
+---
+
 ## Engineer Brief specification engine
 
 A second, much stricter engine implementing `Asymmetry_Engine_Engineer_Brief.docx`:

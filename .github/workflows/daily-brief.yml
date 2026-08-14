@@ -104,6 +104,17 @@ jobs:
           fi
           python -m asymmetry.cli brief --html --top 10 $REFRESH
 
+      - name: Specification V3 scan
+        # Runs after the brief so a V3 failure cannot cost the day's brief. The scan is
+        # network-paced across ~270 candidates, hence the generous timeout.
+        continue-on-error: true
+        timeout-minutes: 20
+        env:
+          CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: python -m asymmetry.cli v3 --no-refresh --per-day 3
+
       - name: Build static site
         run: python -m asymmetry.cli site
 

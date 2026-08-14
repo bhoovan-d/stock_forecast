@@ -25,6 +25,8 @@ from ..config import BRIEF_DIR, ROOT
 
 PUBLIC_DIR = ROOT / "public"
 _DATE_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})\.html$")
+# V3 scans publish alongside the daily brief and are listed with their own label.
+_V3_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})-v3\.html$")
 
 # Pulled out of the published pages so the index can show a one-line summary without
 # re-running any engine.
@@ -102,6 +104,23 @@ def _describe(path: Path) -> dict:
     }
 
 
+def _describe_v3(path: Path) -> dict:
+    """Headline facts from a published V3 page, without re-running the scan."""
+    try:
+        text = path.read_text(encoding="utf-8")
+    except OSError:
+        return {}
+    shown = re.search(r"(\d+)\s+are shown", text)
+    regime = re.search(r'class="chip (?:pos|caution)">([^<]+)<', text)
+    count = shown.group(1) if shown else None
+    bits = []
+    if count is not None:
+        bits.append(f"{count} setup{'s' if count != '1' else ''}")
+    if regime:
+        bits.append(regime.group(1).strip())
+    return {"summary": " · ".join(bits) if bits else "specification scan"}
+
+
 def _verdict_colour(verdict: str) -> str:
     lowered = verdict.lower()
     if "aggressive" in lowered:
@@ -121,10 +140,27 @@ def build_site(output: Path | None = None) -> Path:
         key=lambda p: p.name,
         reverse=True,
     )
-    for brief in briefs:
-        shutil.copy2(brief, out / brief.name)
+    v3_pages = sorted(
+        (p for p in BRIEF_DIR.glob("*-v3.html") if _V3_RE.match(p.name)),
+        key=lambda p: p.name,
+        reverse=True,
+    )
+    for page in [*briefs, *v3_pages]:
+        shutil.copy2(page, out / page.name)
 
     cards = ""
+    for page in v3_pages:
+        stamp = _V3_RE.match(page.name).group(1)
+        when = date.fromisoformat(stamp)
+        meta = _describe_v3(page)
+        cards += (
+            f'<li><a class="card" href="{page.name}">'
+            f'<span class="dot" style="background:var(--accent)"></span>'
+            f'<span class="when">{when:%d %b %Y}</span>'
+            f'<span class="verdict">V3 — {html.escape(meta.get("summary", "specification scan"))}</span>'
+            f'<span class="tag">V3</span></a></li>'
+        )
+
     for brief in briefs:
         stamp = _DATE_RE.match(brief.name).group(1)
         when = date.fromisoformat(stamp)

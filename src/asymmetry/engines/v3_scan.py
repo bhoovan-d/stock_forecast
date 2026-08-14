@@ -216,6 +216,7 @@ def run_v3_scan(
     refresh_catalysts: bool = False,
     min_score: float = 0.0,
     max_per_day: int = 2,
+    setups: tuple[str, ...] | None = None,
 ) -> V3Scan:
     """Full V3 scan across the NIFTY 500."""
     from ..storage import load_history
@@ -228,6 +229,13 @@ def run_v3_scan(
     history = load_history(days=400, end=as_of)
     candidates, states, history, liquid = stage_one(as_of, history=history)
     stage1_time = time.time() - started
+
+    if setups:
+        # Measured edge differs sharply by setup, so the engine can be restricted to the
+        # ones that earn their place. See README: the liquidity sweep tested positive while
+        # the flag did not.
+        wanted = {s.lower() for s in setups}
+        candidates = [c for c in candidates if c.setup.kind.value.lower() in wanted]
 
     scan = V3Scan(as_of=str(as_of), universe=500, liquid=len(liquid), with_setup=len(candidates))
     logger.info(

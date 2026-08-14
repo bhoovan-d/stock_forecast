@@ -322,18 +322,36 @@ def v3(
     per_day: int = typer.Option(
         2, help="Max setups shown per day (V3 targets ~10-15/month). 0 = uncapped."
     ),
+    setup: list[str] = typer.Option(
+        None, "--setup",
+        help="Restrict to setup types, e.g. --setup reclaim. Repeatable.",
+    ),
 ) -> None:
     """Specification V3 scan: NIFTY 500, long + short, 4R, 0.5-1.5% stop."""
     from .engines.v3_scan import run_v3_scan
     from .report.v3_report import render_v3, write_v3_brief
+    from .report.v3_website import write_v3_html
 
     target = date.fromisoformat(on) if on else None
     scan = run_v3_scan(
         target, max_intraday=limit, refresh_catalysts=refresh, min_score=min_score,
-        max_per_day=per_day,
+        max_per_day=per_day, setups=tuple(setup) if setup else None,
     )
     console.print(render_v3(scan))
     console.print(f"\n[green]Written:[/] {write_v3_brief(scan)}")
+
+
+@app.command("v3-backtest")
+def v3_backtest(
+    symbols: int = typer.Option(60, help="How many current-setup symbols to replay."),
+    horizon: int = typer.Option(5, help="Holding horizon in sessions."),
+) -> None:
+    """Replay real 15m triggers: does a V3 setup actually reach 4R before its stop?"""
+    from .report.v3_report import render_backtest
+    from .v3_backtest import run_v3_backtest
+
+    result = run_v3_backtest(max_symbols=symbols, horizon_sessions=horizon)
+    console.print(render_backtest(result))
 
 
 @app.command()

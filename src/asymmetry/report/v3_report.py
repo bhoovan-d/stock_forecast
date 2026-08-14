@@ -250,3 +250,75 @@ def write_v3_brief(scan: V3Scan) -> str:
     path = BRIEF_DIR / f"{scan.as_of}-v3.md"
     path.write_text(build_v3_markdown(scan), encoding="utf-8")
     return str(path)
+
+
+def render_backtest(result) -> Group:
+    """Walk-forward result for the V3 engine, measured on real 15m triggers.
+
+    Reported bluntly: the win rate is compared against the break-even a 4R payoff requires,
+    because that single comparison decides whether the specification is tradeable. Costs are
+    shown separately rather than folded in, so a marginal result cannot look profitable.
+    """
+    if not result.trades:
+        return Group(
+            Text.from_markup(
+                "[red]No trades generated.[/] Either no setups fired in the available "
+                "intraday history, or every one failed a hard filter."
+            )
+        )
+
+    breakeven = result.break_even_win_rate
+    win = result.win_rate
+    verdict = (
+        "[green]above break-even — the setup pays at this sample[/]"
+        if win > breakeven + 3
+        else "[yellow]around break-even — not distinguishable from a coin flip here[/]"
+        if win > breakeven - 3
+        else "[red]below break-even — this geometry loses money at the measured hit rate[/]"
+    )
+
+    summary = Table(title="V3 intraday-triggered backtest", header_style="bold", box=None,
+                    padding=(0, 2))
+    summary.add_column("Metric")
+    summary.add_column("Value", justify="right")
+    summary.add_row("Trades", f"{len(result.trades):,}")
+    summary.add_row("Symbols / sessions", f"{result.symbols_tested} / {result.sessions_spanned}")
+    summary.add_row("Resolved (hit stop or target)", f"{len(result.resolved):,}")
+    summary.add_row("[bold]Win rate[/]", f"[bold]{win:.1f}%[/]")
+    summary.add_row("Break-even at 4R", f"{breakeven:.1f}%")
+    summary.add_row("Expectancy per trade", f"{result.expectancy_r:+.3f}R")
+    summary.add_row("Costs", f"-{result.cost_r:.3f}R")
+    summary.add_row("[bold]Net expectancy[/]", f"[bold]{result.net_expectancy_r:+.3f}R[/]")
+    summary.add_row("Total", f"{result.total_r:+.1f}R")
+
+    parts: list = [summary, Text.from_markup(f"\n{verdict}\n")]
+
+    for label, key in (
+        ("By setup", lambda t: t.setup),
+        ("By direction", lambda t: t.direction),
+        ("By stop distance", lambda t: f"{round(t.stop_pct * 2) / 2:.1f}%"),
+    ):
+        frame = result.by(key)
+        if frame.empty or len(frame) < 2:
+            continue
+        table = Table(title=f"\n{label}", header_style="bold", box=None, padding=(0, 2))
+        table.add_column("Bucket")
+        table.add_column("n", justify="right")
+        table.add_column("Win rate", justify="right")
+        table.add_column("Mean R", justify="right")
+        for row in frame.itertuples():
+            style = "green" if row.mean_r > 0 else "red"
+            rate = f"{row.win_rate:.0f}%" if row.win_rate == row.win_rate else "—"
+            table.add_row(str(row.bucket), str(int(row.n)), rate,
+                          f"[{style}]{row.mean_r:+.2f}[/]")
+        parts.append(table)
+
+    parts.append(
+        Text.from_markup(
+            "\n[dim]Entries and stops come from the live engine, resolved on 15-minute bars. "
+            "A bar touching both stop and target counts as a loss, since intraday sequence "
+            "is unknown. Intraday history is limited to roughly 60-80 days, so treat the "
+            "buckets as indicative rather than calibrated.[/]"
+        )
+    )
+    return Group(*parts)
