@@ -115,6 +115,11 @@ h2{font-size:19px;font-weight:640;letter-spacing:-.015em;margin:0 0 6px;
 .why dd{margin:0;color:var(--text-dim);line-height:1.5}
 .why dd b{color:var(--text)}
 .chain{font-family:var(--mono);font-size:11.5px;color:var(--text-dim)}
+/* The execution block is the actionable half of the card, so it is set apart from the
+   thesis above it. Structure only — no colour, since red and green are reserved for
+   direction and risk. */
+.exec{background:var(--raised);border-top:1px solid var(--line);padding-top:14px}
+.exec dd{font-size:12.5px}
 
 table{border-collapse:collapse;width:100%;min-width:520px}
 .scroller{overflow-x:auto;background:var(--surface);border:1px solid var(--line);
@@ -200,9 +205,9 @@ footer{margin-top:48px;padding-top:20px;border-top:1px solid var(--line);
       4.0% · needs <b>2.1%</b></dd>
     <dt>Structure</dt><dd class="chain">W down, LH/LL &rarr;
       D sideways, none</dd>
-    <dt>Trigger</dt><dd>live now</dd>
     <dt>Where I'm wrong</dt><dd><b>15m swing low at 822.50</b></dd>
   </dl></div>
+  <div class="why exec"><dl><dt>Entry</dt><dd>Buy at market or limit near 826.90 — the reclaim confirmed on the trigger bar, so that bar&#x27;s close is the entry. There is no further level to wait for.</dd><dt>Valid fill</dt><dd>826.63 – 835.03. The stop is a fixed structural level, so a fill outside this band puts it beyond V3&#x27;s 0.5–1.5% rule — a different trade, not a worse one.</dd><dt>Trigger</dt><dd>closing print at 15:30 IST on Fri 14 Aug 2026 — the newest bar in this scan&#x27;s data.</dd><dt>Exit by</dt><dd>hold 1–5 sessions; time-stop at the close on Fri 21 Aug 2026 (weekdays only — an NSE holiday in between pushes it out a day).</dd><dt>Target basis</dt><dd>4R is measured from the fill: 844.50 assumes entry at 826.90 with 4.40 of risk.</dd></dl></div>
 </div>
   </section>
 
@@ -217,6 +222,6 @@ footer{margin-top:48px;padding-top:20px;border-top:1px solid var(--line);
 
   <footer>
     <span>Right market → right sector → right stock → right time → right risk/reward</span>
-    <span class="num">Generated 15 Aug 2026 12:28</span>
+    <span class="num">Generated 15 Aug 2026 13:49</span>
   </footer>
 </div>
