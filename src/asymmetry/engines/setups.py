@@ -1,9 +1,8 @@
-"""The two price-action setups V3 permits (§9).
+"""The price-action setups V3 permits (§9).
 
-V3 is deliberately narrow here: only **liquidity sweep** and **high-tight flag**. Generic
-"breakout" detection is what produced the mediocre candidates — it fires on any stock making
-a new high, most of which have no asymmetry left. Both setups below describe a specific
-imbalance rather than mere strength:
+V3 is deliberately narrow. Generic "breakout" detection is what produced the mediocre
+candidates — it fires on any stock making a new high, most of which have no asymmetry left.
+Every setup here describes a specific imbalance rather than mere strength:
 
 * **Liquidity sweep** — price takes out an obvious prior low, sellers fail to follow
   through, and the level is reclaimed. Whoever sold the breakdown is now trapped, and the
@@ -13,7 +12,21 @@ imbalance rather than mere strength:
 * **High-tight flag** — a strong impulse, then a tight, controlled pause near the extreme.
   Compression before expansion, with the prior impulse proving the stock can travel.
 
-Both are implemented symmetrically for long and short, since V3 allows either direction.
+* **Base breakout on volume** — a tight base, then a range expansion out of it on a volume
+  surge. This is *not* the generic breakout the paragraph above rejects: the volume
+  requirement is what separates a real change of hands from a drift to a new high, and it is
+  the difference that makes it selective. Measured over the stored NIFTY 500 on 14 Aug 2026
+  it fired on 6 of 473 liquid names. It exists because LGEINDIA — a 9.6% expansion out of a
+  3.7% base on 36.8x volume, with a genuine earnings catalyst — was invisible to the other
+  two: its pre-move impulse measured 7.3% against the flag's 8.0% flagpole minimum.
+
+All three are implemented symmetrically for long and short, since V3 allows either
+direction.
+
+**None of them may be labelled by the move they are trying to catch.** Each measures its
+setup strictly on the bars *preceding* the confirming bar, so a signal that appears today
+would have appeared on today's data alone. `fetch_chart(as_of=...)` enforces the same
+property upstream by truncating the frame.
 """
 
 from __future__ import annotations
@@ -234,17 +247,109 @@ def detect_high_tight_flag(
     )
 
 
-def detect_setup(frame: pd.DataFrame, direction: str = "long") -> SetupSignal:
-    """Best of the two permitted setups, or an explicit none.
+def detect_base_breakout(
+    frame: pd.DataFrame,
+    *,
+    direction: str = "long",
+    base_window: int = 8,
+    max_depth_pct: float = 8.0,
+    min_volume_mult: float = 2.0,
+) -> SetupSignal:
+    """A tight base, then expansion out of it on a volume surge.
 
-    V3 allows nothing else, so a stock making a new high with no sweep and no flag simply
-    does not qualify — which is the point of the narrow taxonomy.
+    The base is measured on the ``base_window`` bars *ending one bar before the last*, and
+    the breakout is judged on the final bar alone. That ordering is the whole integrity of
+    the setup: the base has to have existed before the move, so the signal cannot be a
+    relabelling of an explosion after the fact. LGEINDIA is the worked example — it fires on
+    14 Aug 2026 and is silent on the 13th, from the same code and the same frame.
+
+    Volume is the discriminator, not the breakout. Price clearing a base is common and
+    mostly worthless; price clearing it while volume multiplies is a change of hands.
+    """
+    long_side = direction == "long"
+    if frame is None or len(frame) < base_window + 25:
+        return SetupSignal(direction=direction, note="insufficient history")
+    if "volume" not in frame:
+        return SetupSignal(direction=direction, note="no volume data")
+
+    base = frame.iloc[-(base_window + 1) : -1]
+    bar = frame.iloc[-1]
+    base_high, base_low = float(base["high"].max()), float(base["low"].min())
+    if base_high <= 0:
+        return SetupSignal(direction=direction, note="unusable base")
+
+    depth_pct = (base_high - base_low) / base_high * 100
+    if depth_pct > max_depth_pct:
+        return SetupSignal(
+            direction=direction,
+            note=f"base {depth_pct:.1f}% deep — not a base, just a range",
+        )
+
+    close = float(bar["close"])
+    level = base_high if long_side else base_low
+    if (long_side and close <= level) or (not long_side and close >= level):
+        return SetupSignal(
+            direction=direction,
+            level=round(level, 2),
+            note=f"coiled in a {depth_pct:.1f}% base, {level:,.2f} not yet cleared",
+        )
+
+    baseline_volume = float(base["volume"].mean())
+    if baseline_volume <= 0:
+        return SetupSignal(direction=direction, note="no volume baseline")
+    relative_volume = float(bar["volume"]) / baseline_volume
+    if relative_volume < min_volume_mult:
+        return SetupSignal(
+            direction=direction,
+            level=round(level, 2),
+            note=(
+                f"cleared {level:,.2f} on only {relative_volume:.1f}x volume — "
+                "a drift, not a change of hands"
+            ),
+        )
+
+    # Quality: how tight the base was, how heavy the surge, and whether the bar closed at
+    # its extreme rather than giving the move back into the close.
+    tightness = float(np.clip(100 - (depth_pct / max_depth_pct) * 100, 0, 100))
+    surge = float(np.clip(np.log10(relative_volume) * 100, 0, 100))
+    span = float(bar["high"]) - float(bar["low"])
+    if span > 0:
+        closing = (close - float(bar["low"])) / span * 100
+        if not long_side:
+            closing = 100 - closing
+    else:
+        closing = 50.0
+    quality = 0.35 * tightness + 0.35 * surge + 0.30 * closing
+
+    return SetupSignal(
+        kind=SetupType.BASE_BREAKOUT,
+        direction=direction,
+        found=True,
+        quality=round(quality, 1),
+        level=round(level, 2),
+        note=(
+            f"cleared a {base_window}-bar base ({depth_pct:.1f}% deep) at {level:,.2f} "
+            f"on {relative_volume:.1f}x volume, closing {closing:.0f}% of the bar's range"
+        ),
+    )
+
+
+def detect_setup(frame: pd.DataFrame, direction: str = "long") -> SetupSignal:
+    """Best of the permitted setups, or an explicit none.
+
+    V3 allows nothing else, so a stock making a new high with no sweep, no flag and no
+    volume-backed base breakout simply does not qualify — which is the point of the narrow
+    taxonomy.
     """
     sweep = detect_liquidity_sweep(frame, direction=direction)
     flag = detect_high_tight_flag(frame, direction=direction)
+    base = detect_base_breakout(frame, direction=direction)
 
-    found = [s for s in (sweep, flag) if s.found]
+    found = [s for s in (sweep, flag, base) if s.found]
     if not found:
-        # Surface the more informative explanation of the two.
-        return sweep if sweep.level is not None else flag
+        # Surface the most informative explanation available.
+        for candidate in (sweep, base, flag):
+            if candidate.level is not None:
+                return candidate
+        return flag
     return max(found, key=lambda s: s.quality)

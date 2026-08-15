@@ -166,8 +166,9 @@ COMMANDS: tuple[Command, ...] = (
         fields=(
             Field("on", "Trading date", "date", default="", flag="--date"),
             Field("setup", "Setups", "multi", default=["reclaim"], flag="--setup",
-                  choices=("reclaim", "continuation"),
-                  help="Only the sweep/reclaim setup cleared break-even in the backtest."),
+                  choices=("reclaim", "continuation", "base-breakout"),
+                  help=("Reclaim is the only one measured above break-even. "
+                        "base-breakout is new and not yet measured.")),
             Field("per_day", "Maximum shown per day", "int", default=2, flag="--per-day",
                   help="0 = uncapped. V3 targets ~10–15 a month."),
             Field("min_score", "Quality-score override", "float", default=0.0,

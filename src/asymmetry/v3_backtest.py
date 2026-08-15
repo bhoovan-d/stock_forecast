@@ -42,6 +42,7 @@ from loguru import logger
 
 from .config import settings
 from .data import yahoo
+from .engines.carry import assess_carry, gate_applies
 from .engines.setups import detect_setup
 from .engines.v3 import V3Reject, average_daily_range, build_v3_plan
 from .engines.indicators import atr
@@ -63,6 +64,23 @@ class Trade:
     realised_r: float = 0.0
     mae_r: float = 0.0           # worst excursion against the position, in R
     mfe_r: float = 0.0           # best excursion in favour, in R
+    # The carry verdict at the moment of entry. Trades are *tagged* rather than filtered, so
+    # one replay yields both cohorts and the gate's contribution is measured against the
+    # same trades instead of against a differently-sampled run.
+    carry_passed: bool = False      # the raw carry verdict, recorded for every setup
+    carry_score: float = 0.0
+    carry_failed: str = ""
+    carry_applies: bool = True      # whether the gate may reject this setup at all
+
+    @property
+    def admitted(self) -> bool:
+        """What the engine would actually have done, given per-setup gating.
+
+        Kept distinct from ``carry_passed`` on purpose: carry is still measured on setups it
+        does not gate, so the decision to exempt them stays checkable against later data
+        rather than becoming invisible.
+        """
+        return self.carry_passed or not self.carry_applies
 
 
 @dataclass
@@ -70,6 +88,18 @@ class BacktestResult:
     trades: list[Trade] = field(default_factory=list)
     symbols_tested: int = 0
     sessions_spanned: int = 0
+    # Decision points where the carry test could not be evaluated at all (no 60m history
+    # that far back). Reported rather than silently folded into "failed".
+    carry_unavailable: int = 0
+
+    def gated(self) -> BacktestResult:
+        """The same run, keeping only what the engine would actually have taken."""
+        return BacktestResult(
+            trades=[t for t in self.trades if t.admitted],
+            symbols_tested=self.symbols_tested,
+            sessions_spanned=self.sessions_spanned,
+            carry_unavailable=self.carry_unavailable,
+        )
 
     # ── headline ──────────────────────────────────────────────────────────────
 
@@ -198,6 +228,10 @@ def backtest_symbol(
     if intraday is None or len(intraday) < 120:
         return []
 
+    # 60m is fetched once and sliced per decision, rather than re-fetched per bar. The slice
+    # is by *timestamp*, not date: a decision taken at 11:15 must not see 14:15's bar.
+    hourly = yahoo.fetch_chart(yahoo.to_yahoo_symbol(symbol), range_="730d", interval="60m")
+
     sessions = sorted({ts.date() for ts in intraday.index})
     if len(sessions) < 15:
         return []
@@ -245,10 +279,22 @@ def backtest_symbol(
         except V3Reject:
             continue
 
+        # The carry verdict as of this bar, on the same terms the scanner applies.
+        carry = assess_carry(
+            hourly[hourly.index <= intraday.index[i]] if hourly is not None else None,
+            direction=plan.direction,
+            required_pct=plan.target_pct,
+            floor=settings.v3_carry_score_floor,
+            min_volume_score=settings.v3_carry_min_volume_score,
+            min_headroom_score=settings.v3_carry_min_headroom_score,
+        )
+
         trade = Trade(
             symbol=symbol, direction=plan.direction, setup=setup.kind.value,
             entered_at=intraday.index[i], entry=plan.entry, stop=plan.stop,
             target=plan.target, stop_pct=plan.stop_pct,
+            carry_passed=carry.passes, carry_score=carry.score,
+            carry_failed=carry.failed, carry_applies=gate_applies(setup.kind),
         )
         trades.append(_resolve_forward(intraday, i, trade, max_bars))
         busy_until = i + trade.bars_held

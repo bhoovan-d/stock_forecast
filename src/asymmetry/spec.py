@@ -56,6 +56,10 @@ class SetupType(str, Enum):
     BREAKOUT_RETEST = "breakout-retest"
     CONTINUATION = "continuation"
     RECLAIM = "reclaim"
+    # Distinct from BREAKOUT on purpose: that value is the generic "price cleared a base"
+    # shape `structure._base_quality` reports for any timeframe. This one is a V3 setup and
+    # additionally requires the volume surge, which is what makes it selective.
+    BASE_BREAKOUT = "base-breakout"
     FLAT_BASE = "flat base"
     ASCENDING_BASE = "ascending base"
     FAILED_BREAKOUT = "failed breakout"

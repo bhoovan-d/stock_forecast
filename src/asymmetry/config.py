@@ -56,16 +56,59 @@ class Settings(BaseSettings):
     liquidity_lookback_days: int = 20
 
     # ── V3 scoring weights (Spec V3 §16) ──────────────────────────────────────
-    # Seven factors, six at 15% and volatility at 10%. Sector leadership is a *scoring*
-    # factor here, not a gate: V3 §16 names the hard filters explicitly as 4R, stop
-    # distance, liquidity and basic technical validity, and nothing else may reject.
-    v3_weight_rs_nifty: float = 0.15
-    v3_weight_rs_sector: float = 0.15
-    v3_weight_sector_leadership: float = 0.15
-    v3_weight_structure: float = 0.15
-    v3_weight_entry_quality: float = 0.15
-    v3_weight_catalyst: float = 0.15
-    v3_weight_volatility: float = 0.10
+    # Sector leadership is a *scoring* factor here, not a gate: V3 §16 names the hard filters
+    # explicitly as 4R, stop distance, liquidity and basic technical validity, and nothing
+    # else may reject.
+    #
+    # `structure` is the weekly/daily trend the trade is taken with or against. It used to be
+    # fed the setup detector's own quality by mistake, which is why a name in a weekly
+    # downtrend could score 90 on "structure"; the daily setup now has its own module so the
+    # two cannot be confused again. `carry` is the 60m/120m continuation grade and carries
+    # the largest single weight — it answers whether a position survives 1-5 sessions, which
+    # is the question the engine previously never asked.
+    #
+    # These must sum to 1.0; `test_v3_weights_sum_to_one` enforces it.
+    v3_weight_rs_nifty: float = 0.12
+    v3_weight_rs_sector: float = 0.12
+    v3_weight_sector_leadership: float = 0.10
+    v3_weight_structure: float = 0.12
+    v3_weight_setup_quality: float = 0.10
+    v3_weight_entry_quality: float = 0.08
+    v3_weight_catalyst: float = 0.12
+    v3_weight_volatility: float = 0.06
+    v3_weight_carry: float = 0.18
+
+    # ── V3 carry gate (60m/120m) ──────────────────────────────────────────────
+    # A setup that clears every checklist condition still has to grade out. Missing 60m data
+    # fails closed: unproven is not the same as fine.
+    v3_carry_score_floor: float = 60.0
+
+    # Which setups the carry gate may reject.
+    #
+    # Measured, not chosen. Over 2,527 replayed 15m triggers the gate moved mean R by setup:
+    #
+    #     base-breakout   +0.75R -> +1.59R   (65 -> 9 trades)
+    #     continuation    -0.80R -> -0.42R   (1,780 -> 69)
+    #     reclaim         +0.30R -> -0.07R   (682 -> 35)
+    #
+    # It destroys the edge on the one setup that had one. A sweep-and-reclaim is a
+    # counter-trend entry by construction — price has just taken out a prior low — so a
+    # continuation test selects the reclaims that are already extended and aligned, which
+    # are precisely the ones with the least asymmetry left. The gate is a continuation-regime
+    # test, so it applies only to setups that are continuation trades. Carry is still
+    # measured and reported for the others; it simply cannot reject them.
+    v3_carry_gated_setups: str = "base-breakout,continuation"
+    # Two components are requirements, not contributors. A high total assembled from
+    # alignment and range position while volume is absent and the next opposing level sits
+    # inside the target is not a carry setup — it is the score hiding a fatal miss, which is
+    # the failure the whole gate exists to prevent.
+    v3_carry_min_volume_score: float = 40.0
+    v3_carry_min_headroom_score: float = 40.0
+    # Base breakout: the base must be tight, and the breakout bar must carry real volume.
+    # Volume is the discriminator — price clearing a base is common and mostly worthless.
+    base_breakout_window: int = 8
+    base_breakout_max_depth_pct: float = 8.0
+    base_breakout_min_volume_mult: float = 2.0
 
     # Composite relative strength (V3 §6): level *and* direction of strength, so a stock
     # with high but deteriorating RS ranks below one that is high and accelerating.

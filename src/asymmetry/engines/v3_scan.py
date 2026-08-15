@@ -26,7 +26,8 @@ from loguru import logger
 
 from ..config import settings
 from ..data import MarketData, nse_archive, yahoo
-from ..spec import SetupType
+from ..spec import SetupType, Trend
+from .carry import CarryState, assess_carry, gate_applies
 from .setups import SetupSignal, detect_setup
 from .structure import analyse_timeframe, classify_structure
 from .v3 import (
@@ -68,6 +69,11 @@ class V3Candidate:
     weekly_note: str = ""
     daily_note: str = ""
     hourly_note: str = ""
+    # The trends themselves, not only their rendered form — the veto and the structure score
+    # both need the enum, and keeping only the strings is why neither existed before.
+    weekly_trend: Trend = Trend.SIDEWAYS
+    daily_trend: Trend = Trend.SIDEWAYS
+    carry: CarryState = field(default_factory=CarryState)
     rejected_by: str = ""
     reject_detail: str = ""
 
@@ -89,6 +95,9 @@ class V3Scan:
     near_miss: list[V3Candidate] = field(default_factory=list)
     # How many cleared the quality floor before the daily cap was applied.
     cleared_floor: int = 0
+    # Of the technical-validity rejections, how many were the carry gate specifically. The
+    # funnel is only useful if it says which rung of the timeframe chain did the cutting.
+    carry_rejected: int = 0
     reject_counts: dict[str, int] = field(default_factory=dict)
     tier: str = ""
 
@@ -164,6 +173,9 @@ def stage_one(
         weekly_state = analyse_timeframe(weekly, "Weekly", ema_spans=(20, 50))
         daily_state = analyse_timeframe(daily, "Daily", ema_spans=(20, 50))
 
+        if not trend_permits(weekly_state.trend, daily_state.trend, setup.direction):
+            continue
+
         stock = liquid[symbol]
         sector_state = states.get(stock.sector)
         rs_row = rs.loc[symbol] if symbol in rs.index else None
@@ -185,10 +197,44 @@ def stage_one(
                 atr_pct=round(atr_pct, 2),
                 weekly_note=f"{weekly_state.trend.value}, {weekly_state.structure or 'no structure'}",
                 daily_note=f"{daily_state.trend.value}, {daily_state.setup.value}",
+                weekly_trend=weekly_state.trend,
+                daily_trend=daily_state.trend,
             )
         )
 
     return candidates, states, history, liquid
+
+
+def trend_permits(weekly: Trend, daily: Trend, direction: str) -> bool:
+    """May a 1-5 session hold be taken in this direction at all? (stage 1, free)
+
+    A hold taken against the weekly or daily trend is not a continuation trade, whatever the
+    entry looks like. JYOTICNC published at 76.4 on 14 Aug 2026 showing "W down, LH/LL → D
+    sideways", because higher-timeframe trend contributed nothing to the score and nothing
+    to any gate. Both states are already computed in stage 1, so this costs no network work
+    and shrinks the shortlist before any is paid for.
+    """
+    against = Trend.DOWN if direction == "long" else Trend.UP
+    return weekly is not against and daily is not against
+
+
+def _structure_score(candidate: V3Candidate) -> float:
+    """Weekly and daily trend, scored for the direction actually being traded.
+
+    This is what "structure" was always supposed to mean. The scan previously passed the
+    setup detector's own quality here, so a name could score 90 on structure while its
+    weekly trend was down — the exact case that put JYOTICNC on the site.
+    """
+    with_trend = Trend.UP if candidate.direction == "long" else Trend.DOWN
+    against = Trend.DOWN if candidate.direction == "long" else Trend.UP
+
+    def grade(trend: Trend) -> float:
+        if trend is with_trend:
+            return 100.0
+        return 0.0 if trend is against else 55.0
+
+    # Weekly leads: it decides whether a multi-session hold is swimming with the tide.
+    return round(0.6 * grade(candidate.weekly_trend) + 0.4 * grade(candidate.daily_trend), 1)
 
 
 def _prefilter_rank(candidate: V3Candidate) -> float:
@@ -276,13 +322,13 @@ def run_v3_scan(
     candidates.sort(key=_prefilter_rank, reverse=True)
     shortlist = candidates if max_intraday <= 0 else candidates[:max_intraday]
     logger.info(
-        f"[v3] stage 2: 15m trigger check across {len(shortlist)} candidates "
-        f"(~{len(shortlist) * 1.3 / 60:.0f} min)"
+        f"[v3] stage 2: 60m/120m carry test across {len(shortlist)} candidates, "
+        f"then a 15m trigger check on whatever survives "
+        f"(~{len(shortlist) * 2.4 / 60:.0f} min)"
     )
 
     for candidate in shortlist:
         symbol = yahoo.to_yahoo_symbol(candidate.symbol)
-        m15 = yahoo.fetch_chart(symbol, range_="60d", interval="15m", as_of=as_of)
 
         group = history[history["symbol"] == candidate.symbol].sort_values("dt").set_index("dt")
         daily = group[["high", "low", "close", "volume"]].astype(float)
@@ -292,6 +338,42 @@ def run_v3_scan(
         candidate.catalyst_note = catalyst_notes.get(candidate.symbol, "")
 
         scan.evaluated += 1
+
+        # ── Stage 2a: the carry test, before any 15m data is paid for ─────────
+        #
+        # Ordering is deliberate. The gate rejects most candidates, so testing carry first
+        # means the 15m fetch — the expensive half of stage 2 — is only paid for names that
+        # could actually be traded. Running it afterwards would cost more and prove less.
+        h60 = yahoo.fetch_chart(symbol, range_="730d", interval="60m", as_of=as_of)
+        candidate.carry = assess_carry(
+            h60,
+            direction=candidate.direction,
+            required_pct=4.0 * settings.min_stop_pct,
+            floor=settings.v3_carry_score_floor,
+            min_volume_score=settings.v3_carry_min_volume_score,
+            min_headroom_score=settings.v3_carry_min_headroom_score,
+        )
+        # Carry is measured for every candidate, but only *gates* the setups that are
+        # continuation trades. On reclaim it removed the edge rather than protecting it.
+        if gate_applies(candidate.setup.kind) and not candidate.carry.passes:
+            # Reported under technical validity rather than as a fifth hard filter: §16 is
+            # explicit that there are four, and a setup with no higher-timeframe carry
+            # structure is not technically valid for a 1-5 session hold.
+            candidate.rejected_by = "technical validity"
+            candidate.reject_detail = candidate.carry.failed
+            scan.reject_counts["technical validity"] = (
+                scan.reject_counts.get("technical validity", 0) + 1
+            )
+            scan.carry_rejected += 1
+            continue
+
+        if h60 is not None and len(h60) > 30:
+            state = analyse_timeframe(h60, "60m", ema_spans=(20,))
+            candidate.hourly_note = f"{state.trend.value}, {state.setup.value}"
+
+        # ── Stage 2b: the 15m entry, only for names that proved they carry ────
+        m15 = yahoo.fetch_chart(symbol, range_="60d", interval="15m", as_of=as_of)
+
         try:
             plan = build_v3_plan(
                 direction=candidate.direction, intraday=m15, daily=daily, weekly=weekly,
@@ -337,10 +419,12 @@ def run_v3_scan(
             rs_nifty_pct=directional_rs,
             rs_sector_pct=directional_sector_rs,
             sector_percentile=directional_sector,
-            structure_score=candidate.setup.quality,
+            structure_score=_structure_score(candidate),
+            setup_quality=candidate.setup.quality,
             entry_quality=entry_quality,
             catalyst_score=candidate.catalyst_score,
             volatility_score=volatility_score,
+            carry_score=candidate.carry.score,
         )
 
         if candidate.score >= threshold:
@@ -368,20 +452,14 @@ def run_v3_scan(
         scan.near_miss = scan.trades[max_per_day:] + scan.near_miss
         scan.trades = scan.trades[:max_per_day]
 
-    # Stage 3: the 60m read, fetched only for names that actually qualified. It enriches the
-    # report rather than deciding anything, so paying for it earlier would be waste.
-    for candidate in scan.trades:
-        hourly = yahoo.fetch_chart(
-            yahoo.to_yahoo_symbol(candidate.symbol), range_="730d", interval="60m", as_of=as_of
-        )
-        if hourly is not None and len(hourly) > 30:
-            state = analyse_timeframe(hourly, "60m", ema_spans=(20,))
-            candidate.hourly_note = f"{state.trend.value}, {state.setup.value}"
+    # The 60m read is no longer a postscript: it ran as the carry gate in stage 2a, before
+    # any name could qualify, and `hourly_note` was filled there.
 
     scan.tier = data.session_tier.label
 
     logger.info(
         f"[v3] {scan.evaluated} evaluated in {time.time() - started:.0f}s → "
+        f"{scan.carry_rejected} failed the carry test, "
         f"{scan.cleared_floor} cleared the floor ({threshold:.0f}), "
         f"showing top {len(scan.trades)}, {scan.rejected} failed a hard filter"
     )

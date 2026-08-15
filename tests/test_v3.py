@@ -242,8 +242,9 @@ def test_v3_weights_sum_to_one():
     total = (
         settings.v3_weight_rs_nifty + settings.v3_weight_rs_sector
         + settings.v3_weight_sector_leadership + settings.v3_weight_structure
-        + settings.v3_weight_entry_quality + settings.v3_weight_catalyst
-        + settings.v3_weight_volatility
+        + settings.v3_weight_setup_quality + settings.v3_weight_entry_quality
+        + settings.v3_weight_catalyst + settings.v3_weight_volatility
+        + settings.v3_weight_carry
     )
     assert total == pytest.approx(1.0, abs=1e-9)
 
@@ -257,19 +258,21 @@ def test_rs_composite_weights_sum_to_one():
 
 
 def test_sector_leadership_cannot_veto_a_strong_setup():
-    """Sector is a 15% score, not a gate.
+    """Sector is a score, not a gate.
 
-    A weak sector costs at most 15 points, so an otherwise exceptional candidate still
+    A weak sector costs at most its weight, so an otherwise exceptional candidate still
     outranks a mediocre one from a leading sector. Gating on sector is what caused the
     engine to discard valid setups.
     """
     strong_weak_sector, _ = quality_score(
         rs_nifty_pct=95, rs_sector_pct=90, sector_percentile=10,
-        structure_score=90, entry_quality=90, catalyst_score=80, volatility_score=90,
+        structure_score=90, setup_quality=90, entry_quality=90, catalyst_score=80,
+        volatility_score=90, carry_score=90,
     )
     mediocre_top_sector, _ = quality_score(
         rs_nifty_pct=55, rs_sector_pct=50, sector_percentile=100,
-        structure_score=50, entry_quality=50, catalyst_score=50, volatility_score=50,
+        structure_score=50, setup_quality=50, entry_quality=50, catalyst_score=50,
+        volatility_score=50, carry_score=50,
     )
     assert strong_weak_sector > mediocre_top_sector
 
@@ -277,14 +280,35 @@ def test_sector_leadership_cannot_veto_a_strong_setup():
 def test_score_is_bounded():
     top, _ = quality_score(
         rs_nifty_pct=100, rs_sector_pct=100, sector_percentile=100,
-        structure_score=100, entry_quality=100, catalyst_score=100, volatility_score=100,
+        structure_score=100, setup_quality=100, entry_quality=100, catalyst_score=100,
+        volatility_score=100, carry_score=100,
     )
     bottom, _ = quality_score(
         rs_nifty_pct=0, rs_sector_pct=0, sector_percentile=0,
-        structure_score=0, entry_quality=0, catalyst_score=0, volatility_score=0,
+        structure_score=0, setup_quality=0, entry_quality=0, catalyst_score=0,
+        volatility_score=0, carry_score=0,
     )
     assert top == pytest.approx(100.0, abs=0.01)
     assert bottom == pytest.approx(0.0, abs=0.01)
+
+
+def test_carry_is_the_heaviest_single_factor():
+    """The gate's grade should outweigh any one descriptive factor.
+
+    Carry answers whether a position survives 1-5 sessions, which is the question the
+    engine previously never asked at all.
+    """
+    weights = {
+        "rs_nifty": settings.v3_weight_rs_nifty,
+        "rs_sector": settings.v3_weight_rs_sector,
+        "sector": settings.v3_weight_sector_leadership,
+        "structure": settings.v3_weight_structure,
+        "setup": settings.v3_weight_setup_quality,
+        "entry": settings.v3_weight_entry_quality,
+        "catalyst": settings.v3_weight_catalyst,
+        "volatility": settings.v3_weight_volatility,
+    }
+    assert settings.v3_weight_carry > max(weights.values())
 
 
 # ── Intraday trigger scanning ─────────────────────────────────────────────────

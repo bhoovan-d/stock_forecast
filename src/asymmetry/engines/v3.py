@@ -452,28 +452,40 @@ def quality_score(
     rs_sector_pct: float,
     sector_percentile: float,
     structure_score: float,
+    setup_quality: float,
     entry_quality: float,
     catalyst_score: float,
     volatility_score: float,
+    carry_score: float,
 ) -> tuple[float, dict[str, float]]:
-    """Seven weighted factors, 0-100. Hard filters are applied elsewhere and never here."""
+    """Nine weighted factors, 0-100. Hard filters are applied elsewhere and never here.
+
+    ``structure_score`` is the weekly/daily trend the trade is taken with or against, and
+    ``setup_quality`` is how clean the daily setup itself is. Passing the second as the first
+    — which the scan used to do — makes a counter-trend name look structurally sound because
+    its sweep was tidy.
+    """
     modules = {
         "rs_vs_nifty": rs_nifty_pct,
         "rs_vs_sector": rs_sector_pct,
         "sector_leadership": sector_percentile,
         "structure": structure_score,
+        "setup_quality": setup_quality,
         "entry_quality": entry_quality,
         "catalyst": catalyst_score,
         "volatility": volatility_score,
+        "carry": carry_score,
     }
     weights = {
         "rs_vs_nifty": settings.v3_weight_rs_nifty,
         "rs_vs_sector": settings.v3_weight_rs_sector,
         "sector_leadership": settings.v3_weight_sector_leadership,
         "structure": settings.v3_weight_structure,
+        "setup_quality": settings.v3_weight_setup_quality,
         "entry_quality": settings.v3_weight_entry_quality,
         "catalyst": settings.v3_weight_catalyst,
         "volatility": settings.v3_weight_volatility,
+        "carry": settings.v3_weight_carry,
     }
     total = sum(modules[k] * weights[k] for k in modules)
     return round(total, 2), {k: round(v, 1) for k, v in modules.items()}

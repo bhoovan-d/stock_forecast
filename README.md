@@ -253,8 +253,8 @@ judgement; it does not predict outcomes, and no output here is a recommendation 
 *band* rather than a ceiling, and roughly 10–15 setups a **month** rather than a daily list.
 
 ```bash
-uv run asymmetry v3                      # full NIFTY 500 scan, ~6 min
-uv run asymmetry v3 --setup reclaim      # only the setup that tested positive
+uv run asymmetry v3                      # full NIFTY 500 scan, ~8 min
+uv run asymmetry v3 --setup reclaim      # only setups with standalone support
 uv run asymmetry v3-backtest             # does any of it actually pay?
 ```
 
@@ -264,39 +264,65 @@ uv run asymmetry v3-backtest             # does any of it actually pay?
 | Minimum R:R | 2.0 | 4.0 | **4.0** |
 | Stop | none | ≤1.4% | **0.5–1.5% band** |
 | Output | shortlist | daily | **~10–15 / month** |
-| Setups | breakout | generic | **sweep + flag only** |
+| Setups | breakout | generic | **sweep + flag + base breakout** |
 
 Selection follows V3's hierarchy — right market → right sector → right stock → right time →
-right risk/reward — with sector leadership as a **15% score, not a gate**. §16 names the
-hard filters exactly (4R, stop distance, liquidity, technical validity) and nothing else may
+right risk/reward — with sector leadership as a **score, not a gate**. §16 names the hard
+filters exactly (4R, stop distance, liquidity, technical validity) and nothing else may
 reject. Gating on sector is what made an earlier build discard valid candidates.
 
+### Three timeframes, three jobs
+
+    Daily / Weekly   why this stock, and the regime      stage 1, zero network
+    60m / 120m       is there actually a carry setup     the carry gate
+    30m / 15m        where exactly to enter              entry, stop, target
+
 Stage 1 screens all 473 liquid names from stored bars in ~20s with **zero network calls**
-(weekly is resampled from daily). Only the survivors pay for intraday data.
+(weekly is resampled from daily), and vetoes anything trading against its own weekly or
+daily trend. Survivors pay for 60m data and face the **carry gate** — a stock has to prove a
+continuation regime with enough fuel to hold 1–5 sessions, or there is no trade whatever the
+15m chart offers. Only what survives that pays for 15m.
+
+**Missing 60m data fails closed.** An unproven regime is not the same as an acceptable one:
+a name whose higher-timeframe read simply failed to fetch used to publish anyway.
 
 ### Does V3 work? Measured on real 15-minute triggers
 
-`v3-backtest` replays the engine's own entries — same `detect_setup`, same `build_v3_plan` —
-resolved on 15-minute bars, with a bar touching both stop and target booked as a loss:
+`v3-backtest` replays the engine's own entries — same `detect_setup`, same `build_v3_plan`,
+same `assess_carry` — resolved on 15-minute bars, with a bar touching both stop and target
+booked as a loss. Over 2,527 triggers across 80 symbols and 50 sessions:
 
-| Setup | n | Win rate | Mean R |
-| --- | --: | --: | --: |
-| **Liquidity sweep (reclaim)** | 461 | **26%** | **+0.32R** |
-| High-tight flag (continuation) | 1,178 | 5% | −0.76R |
-| *Break-even at 4R* | | *20%* | *0* |
+| Cohort | n | Win rate | Mean R | Net of costs |
+| --- | --: | --: | --: | --: |
+| Every trigger, no carry gate | 2,527 | 10% | −0.46 | −0.63R |
+| **What the engine takes** | **730** | **24%** | **+0.28** | **+0.11R** |
+| *Break-even at 4R* | | *20%* | | |
 
-**The two setups are not equivalent.** The liquidity sweep clears break-even and stays
-positive after ~0.17R of costs. The flag, as implemented, does not come close — and since it
-generates the majority of signals, the blended result (10.5%, −0.62R net) is dominated by
-it.
+By setup, and whether the gate is allowed to reject it:
 
-Use `--setup reclaim` to run only the one with measured support. The flag detector is kept
-because the failure may be my implementation rather than the pattern, but it should not be
-traded on this evidence.
+| Setup | all n | all mean R | gated n | gated mean R | gated? |
+| --- | --: | --: | --: | --: | --- |
+| **Base breakout on volume** | 65 | +0.75 | **8** | **+1.29** | yes |
+| High-tight flag (continuation) | 1,780 | −0.80 | 40 | −0.25 | yes |
+| **Liquidity sweep (reclaim)** | 682 | **+0.30** | 682 | +0.30 | **no — exempt** |
+
+**The gate is a continuation-regime test, so it only gates continuation trades.** Applied to
+reclaim it cut that setup from +0.30R to −0.07R: a sweep-and-reclaim is a counter-trend entry
+by construction, so a continuation test selects the reclaims already extended and aligned —
+the ones with the least asymmetry left. The twenty best trades in the sample are all
+reclaims scoring 7–43 on carry, every one below the gate's floor of 60.
+
+**Read the headline honestly.** Most of the +0.74R swing is *removing* flag trades, not
+selecting better ones. The flag still loses money after gating and stays off the published
+site; `--setup reclaim` runs only setups with standalone support. And the base-breakout
+result rests on **8 trades** — it agrees with the mechanism and establishes nothing.
 
 Caveat that matters: intraday history is capped at ~60–80 days upstream, so this is one
 market regime and a few thousand trades. It measures the right thing on limited data, rather
 than the wrong thing on plenty.
+
+Full analysis, including per-trade excursions and what the numbers do not support:
+[docs/2026-08-16-carry-gate-measurement.md](docs/2026-08-16-carry-gate-measurement.md).
 
 ---
 

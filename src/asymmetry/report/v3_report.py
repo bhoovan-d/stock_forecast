@@ -47,6 +47,61 @@ def _time_stop(start: date, sessions: int) -> date:
     return cursor
 
 
+def carry_lines(candidate: V3Candidate) -> list[tuple[str, str]]:
+    """Why this name is judged able to carry 1-5 sessions, not merely interesting.
+
+    Shared by all three V3 surfaces, like `execution_lines`. The checklist is reported even
+    when it passes: a gate nobody can see the workings of is indistinguishable from no gate,
+    which is how a description-only 60m read survived as long as it did.
+    """
+    carry = candidate.carry
+    if not carry.checks and not carry.failed:
+        return []
+
+    from ..engines.carry import gate_applies
+
+    gating = gate_applies(candidate.setup.kind)
+    rows: list[tuple[str, str]] = []
+    if carry.failed and gating:
+        rows.append(("Carry", f"FAILED — {carry.failed}"))
+    elif not gating:
+        # Say so explicitly. A reclaim card that showed a carry score without this line
+        # would look like it had cleared a gate it never faced.
+        rows.append((
+            "Carry",
+            f"{carry.score:.0f}/100 — measured but not gating for "
+            f"{candidate.setup.kind.value}: the gate is a continuation-regime test, and it "
+            "cut this setup's measured edge rather than protecting it"
+            + (f". Would have failed on: {carry.failed}" if carry.failed else ""),
+        ))
+    else:
+        rows.append((
+            "Carry",
+            f"{carry.score:.0f}/100 · every gating condition met on 60m and 120m",
+        ))
+
+    if carry.checks:
+        from ..engines.carry import CORE_CONDITIONS
+
+        met = [name for name, ok in carry.checks.items() if ok]
+        rows.append(("Conditions", f"{len(met)}/{len(carry.checks)} met — " + "; ".join(
+            f"{name}{'' if ok else ' (FAILED)'}"
+            f"{'' if name in CORE_CONDITIONS else ' [scored, not gating]'}"
+            for name, ok in carry.checks.items()
+        )))
+    if carry.components:
+        rows.append((
+            "Carry parts",
+            " · ".join(f"{k} {v:.0f}" for k, v in carry.components.items()),
+        ))
+    rows.append((
+        "Higher timeframe",
+        f"60m {carry.trend_60m.value} · 120m {carry.trend_120m.value}, "
+        f"{carry.setup_120m.value}" + (f" · {carry.note}" if carry.note else ""),
+    ))
+    return rows
+
+
 def _bar_span(start) -> str:
     """Describe the interval a trigger bar covers, without inventing one.
 
@@ -153,6 +208,7 @@ def render_v3(scan: V3Scan) -> Group:
     funnel.add_row("NIFTY 500 liquid", str(scan.liquid))
     funnel.add_row("showing a V3 setup", str(scan.with_setup))
     funnel.add_row("intraday-evaluated", str(scan.evaluated))
+    funnel.add_row("proved a 60m/120m carry setup", str(scan.evaluated - scan.carry_rejected))
     funnel.add_row("cleared the quality floor", str(scan.cleared_floor))
     funnel.add_row("[bold]shown today[/]", f"[bold]{len(scan.trades)}[/]")
     parts.append(funnel)
@@ -254,6 +310,7 @@ def _detail(candidate: V3Candidate) -> Text:
             if plan.nearest_barrier
             else ""
         )
+        + "".join(f"\n  [dim]{label}:[/] {value}" for label, value in carry_lines(candidate))
         + "".join(f"\n  [dim]{label}:[/] {value}" for label, value in execution_lines(candidate))
         + f"\n  [dim]Score parts:[/] "
         + " · ".join(f"{k.replace('_', ' ')} {v:.0f}" for k, v in modules.items())
@@ -274,11 +331,15 @@ def build_v3_markdown(scan: V3Scan) -> str:
         "",
         "## Funnel",
         "",
+        f"*{scan.carry_rejected} of {scan.evaluated} evaluated names failed the 60m/120m "
+        "carry test — no carry setup, no trade, whatever the 15m chart offered.*",
+        "",
         "| Stage | Count |",
         "| --- | --: |",
         f"| NIFTY 500 liquid | {scan.liquid} |",
         f"| Showing a V3 setup | {scan.with_setup} |",
         f"| Intraday-evaluated | {scan.evaluated} |",
+        f"| Proved a 60m/120m carry setup | {scan.evaluated - scan.carry_rejected} |",
         f"| Cleared the quality floor | {scan.cleared_floor} |",
         f"| **Shown today** | **{len(scan.trades)}** |",
         "",
@@ -341,6 +402,10 @@ def build_v3_markdown(scan: V3Scan) -> str:
                 + (f" → 60m {candidate.hourly_note}" if candidate.hourly_note else ""),
                 f"- **Where I'm wrong:** {plan.invalidation}",
                 "",
+                "**Why it can carry**",
+                "",
+                *(f"- **{label}:** {value}" for label, value in carry_lines(candidate)),
+                "",
                 "**How to execute it**",
                 "",
                 *(f"- **{label}:** {value}" for label, value in execution_lines(candidate)),
@@ -367,6 +432,16 @@ def write_v3_brief(scan: V3Scan) -> str:
     path = BRIEF_DIR / f"{scan.as_of}-v3.md"
     path.write_text(build_v3_markdown(scan), encoding="utf-8")
     return str(path)
+
+
+def _subset(result, predicate):
+    """A result carrying only the trades matching `predicate`, for cohort comparison."""
+    clone = type(result)(
+        trades=[t for t in result.trades if predicate(t)],
+        symbols_tested=result.symbols_tested,
+        sessions_spanned=result.sessions_spanned,
+    )
+    return clone
 
 
 def render_backtest(result) -> Group:
@@ -429,6 +504,105 @@ def render_backtest(result) -> Group:
             table.add_row(str(row.bucket), str(int(row.n)), rate,
                           f"[{style}]{row.mean_r:+.2f}[/]")
         parts.append(table)
+
+    # ── what the carry gate is worth ──────────────────────────────────────────
+    #
+    # The same trades, split by the gate's own verdict at entry. Filtering first and
+    # measuring second would compare two differently-sampled runs; tagging measures the gate
+    # against the trades it actually judged.
+    gated = result.gated() if hasattr(result, "gated") else None
+    if gated is not None and result.trades:
+        held = len(gated.trades)
+        table = Table(title="\nWhat the 60m/120m carry gate is worth", header_style="bold",
+                      box=None, padding=(0, 2))
+        table.add_column("Cohort")
+        table.add_column("n", justify="right")
+        table.add_column("Win rate", justify="right")
+        table.add_column("Mean R", justify="right")
+        table.add_column("Net of costs", justify="right")
+
+        def row(name: str, res) -> None:
+            if not res.trades:
+                table.add_row(name, "0", "—", "—", "—")
+                return
+            style = "green" if res.net_expectancy_r > 0 else "red"
+            rate = f"{res.win_rate:.0f}%" if res.win_rate == res.win_rate else "—"
+            table.add_row(
+                name, f"{len(res.trades):,}", rate, f"{res.expectancy_r:+.2f}",
+                f"[{style}]{res.net_expectancy_r:+.2f}R[/]",
+            )
+
+        row("Every trigger (gate off)", result)
+        row("Passed the carry gate", gated)
+
+        # Per setup as well as blended. The blended figure is dominated by whichever setup
+        # fires most — continuation supplies most triggers and loses on all of them — so a
+        # gate can help the setups actually traded while the total barely moves.
+        for setup in sorted({t.setup for t in result.trades}):
+            subset = _subset(result, lambda t, s=setup: t.setup == s)
+            passed = _subset(result, lambda t, s=setup: t.setup == s and t.admitted)
+            row(f"  {setup} — all", subset)
+            row(f"  {setup} — gated", passed)
+        parts.append(table)
+
+        verdict_line = (
+            f"\n[dim]The gate kept {held:,} of {len(result.trades):,} triggers "
+            f"({held / len(result.trades) * 100:.0f}%).[/]"
+        )
+        if gated.trades:
+            delta = gated.net_expectancy_r - result.net_expectancy_r
+            verdict_line += (
+                f" [{'green' if delta > 0 else 'red'}]It moves net expectancy by "
+                f"{delta:+.2f}R per trade.[/]"
+            )
+        else:
+            verdict_line += (
+                " [yellow]Nothing survived it, so the gate is unmeasured rather than "
+                "proven — a filter that admits nothing cannot be shown to help.[/]"
+            )
+        if result.carry_unavailable:
+            verdict_line += (
+                f"\n[dim]{result.carry_unavailable:,} decisions had no 60m history that far "
+                "back and were failed closed, the same as the live scan does.[/]"
+            )
+        parts.append(Text.from_markup(verdict_line))
+
+    # ── the survivors, one by one ─────────────────────────────────────────────
+    #
+    # With a deliberately selective gate the useful question is not "what is the win rate
+    # of 40 trades" — it is "are these the setups I wanted?". That is answered by reading
+    # them, so every gated trade is listed while the list stays readable.
+    survivors = [t for t in result.trades if getattr(t, "admitted", False)]
+    if survivors:
+        shown = sorted(survivors, key=lambda x: -x.realised_r)
+        title = (
+            "\nEvery trade the carry gate admitted" if len(shown) <= 40
+            else f"\nThe 20 best and 20 worst of {len(shown)} gated trades"
+        )
+        if len(shown) > 40:
+            shown = shown[:20] + shown[-20:]
+        detail = Table(title=title, header_style="bold", box=None, padding=(0, 2))
+        for column, justify in (
+            ("Symbol", "left"), ("Dir", "left"), ("Setup", "left"), ("Entered", "left"),
+            ("Carry", "right"), ("Stop%", "right"), ("Outcome", "left"),
+            ("R", "right"), ("MAE", "right"), ("MFE", "right"), ("Bars", "right"),
+        ):
+            detail.add_column(column, justify=justify)
+        for t in shown:
+            style = "green" if t.realised_r > 0 else "red"
+            detail.add_row(
+                t.symbol, t.direction, t.setup, f"{t.entered_at:%d %b %H:%M}",
+                f"{t.carry_score:.0f}", f"{t.stop_pct:.2f}%", t.outcome,
+                f"[{style}]{t.realised_r:+.2f}[/]",
+                f"{t.mae_r:+.2f}", f"{t.mfe_r:+.2f}", str(t.bars_held),
+            )
+        parts.append(detail)
+        parts.append(Text.from_markup(
+            "\n[dim]MAE is the worst excursion against the position before it resolved, MFE "
+            "the best in favour — together they say whether a trade went cleanly to target "
+            "or bled first. A gate meant to prove carry should produce high MFE and shallow "
+            "MAE, not merely a better win rate.[/]"
+        ))
 
     parts.append(
         Text.from_markup(

@@ -23,7 +23,7 @@ from datetime import datetime
 from ..config import BRIEF_DIR, settings
 from ..engines.v3_scan import V3Candidate, V3Scan
 from .theme import TOKENS
-from .v3_report import execution_lines
+from .v3_report import carry_lines, execution_lines
 
 _CSS = TOKENS + """
 .wrap{max-width:1060px;margin:0 auto;padding:0 24px 88px}
@@ -101,6 +101,10 @@ h2{font-size:19px;font-weight:640;letter-spacing:-.015em;margin:0 0 6px;
    direction and risk. */
 .exec{background:var(--raised);border-top:1px solid var(--line);padding-top:14px}
 .exec dd{font-size:12.5px}
+/* The carry block sits between the thesis and the order: it is the evidence that the setup
+   can hold for 1-5 sessions, which is a separate claim from either. */
+.carry{border-top:1px solid var(--line);padding-top:14px}
+.carry dd{font-size:12.5px}
 
 table{border-collapse:collapse;width:100%;min-width:520px}
 .scroller{overflow-x:auto;background:var(--surface);border:1px solid var(--line);
@@ -138,6 +142,7 @@ def _funnel(scan: V3Scan) -> str:
     stages = [
         ("NIFTY 500 liquid", scan.liquid, False),
         ("Showing a V3 setup", scan.with_setup, False),
+        ("Proved a 60m/120m carry setup", scan.evaluated - scan.carry_rejected, False),
         ("Cleared the quality floor", scan.cleared_floor, False),
         ("Shown today", len(scan.trades), True),
     ]
@@ -164,10 +169,11 @@ def _card(candidate: V3Candidate) -> str:
     total = risk + reward
     risk_pct = risk / total * 100 if total else 20
 
-    execution = "".join(
-        f"<dt>{_esc(label)}</dt><dd>{_esc(value)}</dd>"
-        for label, value in execution_lines(candidate)
-    )
+    def rows(pairs) -> str:
+        return "".join(f"<dt>{_esc(label)}</dt><dd>{_esc(value)}</dd>" for label, value in pairs)
+
+    carry = rows(carry_lines(candidate))
+    execution = rows(execution_lines(candidate))
 
     return f"""<div class="card">
   <div class="head">
@@ -205,7 +211,9 @@ def _card(candidate: V3Candidate) -> str:
         f" &rarr; 60m {_esc(candidate.hourly_note)}" if candidate.hourly_note else ""
     ) + f"""</dd>
     <dt>Where I'm wrong</dt><dd><b>{_esc(plan.invalidation)}</b></dd>
-  </dl></div>
+  </dl></div>""" + (
+        f'\n  <div class="why carry"><dl>{carry}</dl></div>' if carry else ""
+    ) + f"""
   <div class="why exec"><dl>{execution}</dl></div>
 </div>"""
 
