@@ -338,7 +338,11 @@ def v3(
         max_per_day=per_day, setups=tuple(setup) if setup else None,
     )
     console.print(render_v3(scan))
+    # Both artefacts, every run. `site` only copies the HTML it finds in the brief
+    # directory, so skipping this leaves the published V3 page frozen at whatever scan
+    # last wrote one while the Markdown moves on.
     console.print(f"\n[green]Written:[/] {write_v3_brief(scan)}")
+    console.print(f"[green]Written:[/] {write_v3_html(scan)}")
 
 
 @app.command("v3-backtest")
@@ -352,6 +356,23 @@ def v3_backtest(
 
     result = run_v3_backtest(max_symbols=symbols, horizon_sessions=horizon)
     console.print(render_backtest(result))
+
+
+@app.command()
+def ui(
+    port: int = typer.Option(8765, help="Loopback port for the panel."),
+    open_browser: bool = typer.Option(
+        True, "--open/--no-open", help="Open the panel in your browser on start."
+    ),
+    width: int = typer.Option(150, help="Console width the commands render at."),
+) -> None:
+    """Run every command from a browser instead of here.
+
+    Binds to 127.0.0.1 only. The page posts a command id, never a command line.
+    """
+    from .ui import serve
+
+    serve(port=port, open_browser=open_browser, width=width)
 
 
 @app.command()

@@ -10,11 +10,43 @@ order-placement code at all. You place every trade yourself.
 ```bash
 uv venv && uv pip install -e ".[dev]"
 cp .env.example .env          # optional — it runs with no keys
+uv run asymmetry ui           # every command, in a browser  ← start here
+```
+
+Or drive it from the terminal:
+
+```bash
 uv run asymmetry doctor       # check every data source
 uv run asymmetry backfill     # ~600k daily bars, a few minutes
 uv run asymmetry brief --html # the daily output, Markdown + dashboard
 uv run asymmetry backtest     # does the ranking actually predict anything?
 ```
+
+## The panel
+
+`asymmetry ui` serves a local control panel on `http://127.0.0.1:8765` — every command
+with its options as a form, output streaming live as it runs, and every brief this machine
+has generated in one place. Nothing has to be typed.
+
+- **Commands** — the same fourteen commands, grouped: health, engines, evidence, journal,
+  publish. Each shows the CLI line it will run and roughly how long it takes; options
+  persist between visits.
+- **Output** — the child process's real output, colour and tables intact, streamed line by
+  line. A V3 scan takes minutes, so the state pill counts while it works, and Cancel
+  actually kills the run.
+- **Briefs & pages** — every generated Markdown brief rendered, plus the published pages
+  from `public/` shown as they will appear on the site.
+- **Run history** — what ran this session, how long it took, and its full output again.
+
+Two decisions worth knowing. Runs are **serialised**: a second run queues rather than
+starting, because Yahoo throttles hard enough that the data layer paces itself and two
+scans would fight over that pacing and the SQLite writer. And each run is a **child
+process**, so a scan that dies takes nothing with it and a long one can be cancelled.
+
+It binds to loopback and has no authentication, which is also why the bind address is not
+an option — a "run this command" endpoint does not belong on a network. The page posts a
+command id and a field map, never a command line: `src/asymmetry/ui/commands.py` holds the
+only description of how each command is spelled, and builds the argument list itself.
 
 ## Does it work?
 
@@ -129,6 +161,7 @@ per-stock signals.
 ## Commands
 
 ```bash
+uv run asymmetry ui                  # all of the below, from a browser
 uv run asymmetry doctor              # data source health and active tier
 uv run asymmetry auth                # Upstox token refresh instructions
 uv run asymmetry backfill --days 400 # EOD history into SQLite

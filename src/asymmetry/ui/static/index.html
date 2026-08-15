@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Asymmetry Engine — panel</title>
+<link rel="stylesheet" href="/theme.css">
+<link rel="stylesheet" href="/app.css">
+</head>
+<body>
+
+<header class="top">
+  <div class="brand">
+    <span class="mark"></span>
+    <div>
+      <h1>Asymmetry Engine</h1>
+      <p class="sub">Local control panel · decision support only, never an order</p>
+    </div>
+  </div>
+  <div class="top-right">
+    <div id="status-chips" class="chips"></div>
+    <button id="theme" class="ghost" title="Light / dark">◐</button>
+  </div>
+</header>
+
+<nav class="tabs" role="tablist">
+  <button class="tab is-on" data-view="run">Commands</button>
+  <button class="tab" data-view="docs">Briefs &amp; pages</button>
+  <button class="tab" data-view="runs">Run history</button>
+</nav>
+
+<main>
+  <!-- ── Commands ─────────────────────────────────────────────────────────── -->
+  <section class="view is-on" data-view="run">
+    <aside class="rail" id="command-rail"></aside>
+
+    <div class="pane">
+      <div class="card" id="command-card">
+        <div class="card-head">
+          <div>
+            <h2 id="cmd-title">Loading…</h2>
+            <p id="cmd-blurb" class="dim"></p>
+          </div>
+          <code id="cmd-cli" class="cli"></code>
+        </div>
+
+        <form id="cmd-form" class="fields" autocomplete="off"></form>
+
+        <p id="cmd-danger" class="warn" hidden></p>
+        <div class="actions">
+          <button id="run" class="primary" type="button">Run</button>
+          <button id="cancel" class="ghost" type="button" hidden>Cancel</button>
+          <span id="run-note" class="dim"></span>
+        </div>
+      </div>
+
+      <div class="card console-card">
+        <div class="card-head tight">
+          <h3>Output <span id="job-state" class="pill"></span></h3>
+          <div class="row">
+            <label class="check"><input type="checkbox" id="follow" checked> follow</label>
+            <button id="copy" class="ghost small" type="button">Copy</button>
+          </div>
+        </div>
+        <pre id="console" class="console" tabindex="0">Pick a command and press Run. Output streams here, exactly as the CLI prints it.</pre>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Briefs and pages ─────────────────────────────────────────────────── -->
+  <section class="view" data-view="docs">
+    <aside class="rail" id="doc-rail"></aside>
+    <div class="pane">
+      <div class="card">
+        <div class="card-head tight">
+          <h2 id="doc-title">Briefs &amp; pages</h2>
+          <span id="doc-meta" class="dim"></span>
+        </div>
+        <div id="doc-body" class="doc">
+          <p class="dim">Every brief this machine has generated, plus the published pages in
+          <code>public/</code>. Markdown renders here; pages open in a frame.</p>
+        </div>
+        <iframe id="doc-frame" class="frame" hidden title="Published page"></iframe>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Run history ──────────────────────────────────────────────────────── -->
+  <section class="view" data-view="runs">
+    <div class="pane wide">
+      <div class="card">
+        <div class="card-head tight">
+          <h2>Run history</h2>
+          <span class="dim">This session. Click a run to reopen its output.</span>
+        </div>
+        <table class="grid" id="runs-table">
+          <thead><tr><th>When</th><th>Command</th><th>Status</th><th class="num">Elapsed</th><th>Line</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script src="/app.js"></script>
+</body>
+</html>
