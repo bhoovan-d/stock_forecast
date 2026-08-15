@@ -23,6 +23,7 @@ from datetime import datetime
 from ..config import BRIEF_DIR, settings
 from ..engines.v3_scan import V3Candidate, V3Scan
 from .theme import TOKENS
+from .v3_report import execution_lines
 
 _CSS = TOKENS + """
 .wrap{max-width:1060px;margin:0 auto;padding:0 24px 88px}
@@ -95,6 +96,11 @@ h2{font-size:19px;font-weight:640;letter-spacing:-.015em;margin:0 0 6px;
 .why dd{margin:0;color:var(--text-dim);line-height:1.5}
 .why dd b{color:var(--text)}
 .chain{font-family:var(--mono);font-size:11.5px;color:var(--text-dim)}
+/* The execution block is the actionable half of the card, so it is set apart from the
+   thesis above it. Structure only — no colour, since red and green are reserved for
+   direction and risk. */
+.exec{background:var(--raised);border-top:1px solid var(--line);padding-top:14px}
+.exec dd{font-size:12.5px}
 
 table{border-collapse:collapse;width:100%;min-width:520px}
 .scroller{overflow-x:auto;background:var(--surface);border:1px solid var(--line);
@@ -158,10 +164,9 @@ def _card(candidate: V3Candidate) -> str:
     total = risk + reward
     risk_pct = risk / total * 100 if total else 20
 
-    trigger = (
-        "live now"
-        if plan.is_live
-        else f"triggered {_esc(plan.triggered_at)}"
+    execution = "".join(
+        f"<dt>{_esc(label)}</dt><dd>{_esc(value)}</dd>"
+        for label, value in execution_lines(candidate)
     )
 
     return f"""<div class="card">
@@ -199,9 +204,9 @@ def _card(candidate: V3Candidate) -> str:
       D {_esc(candidate.daily_note)}""" + (
         f" &rarr; 60m {_esc(candidate.hourly_note)}" if candidate.hourly_note else ""
     ) + f"""</dd>
-    <dt>Trigger</dt><dd>{trigger}</dd>
     <dt>Where I'm wrong</dt><dd><b>{_esc(plan.invalidation)}</b></dd>
   </dl></div>
+  <div class="why exec"><dl>{execution}</dl></div>
 </div>"""
 
 

@@ -13,16 +13,128 @@ chain (§12). Two reporting choices follow directly from the spec:
 
 from __future__ import annotations
 
+from datetime import date, timedelta
+
 from rich.console import Group
 from rich.table import Table
 from rich.text import Text
 
 from ..config import BRIEF_DIR, settings
+from ..data.yahoo import SESSION_CLOSE
+from ..engines.v3 import ENTRY_STOP_THROUGH, TRIGGER_TIMEFRAME_MINUTES
 from ..engines.v3_scan import V3Candidate, V3Scan
 
 
 def _direction_style(direction: str) -> str:
     return "green" if direction == "long" else "red"
+
+
+def _time_stop(start: date, sessions: int) -> date:
+    """The date ``sessions`` trading days after ``start``, counting weekdays only.
+
+    NSE holidays are deliberately not applied. ``nse_archive.trading_days`` resolves a
+    session by probing for its published bhavcopy, which by definition only exists for days
+    that have already happened, and this project maintains no forward holiday calendar (the
+    NSE site is Akamai-blocked from here — see the README). A holiday inside the window
+    therefore pushes the real date out by a day, which the rendered wording says outright
+    rather than implying a precision that is not available.
+    """
+    cursor, remaining = start, sessions
+    while remaining > 0:
+        cursor += timedelta(days=1)
+        if cursor.weekday() < 5:
+            remaining -= 1
+    return cursor
+
+
+def _bar_span(start) -> str:
+    """Describe the interval a trigger bar covers, without inventing one.
+
+    Bars are stamped with their start, so the naive ``start + 15min`` reads correctly all
+    session — until the last bar. The feed returns 26 bars for a 25-interval session, the
+    extra one stamped at the 15:30 close: that is the closing print, and rendering it as
+    "15:30–15:45" quotes a window in which the exchange is shut.
+    """
+    if start.time() >= SESSION_CLOSE:
+        return f"closing print at {start:%H:%M} IST on {start:%a %d %b %Y}"
+    end = start + timedelta(minutes=TRIGGER_TIMEFRAME_MINUTES)
+    if end.time() > SESSION_CLOSE:
+        end = end.replace(hour=SESSION_CLOSE.hour, minute=SESSION_CLOSE.minute)
+    return (
+        f"{TRIGGER_TIMEFRAME_MINUTES}m bar {start:%H:%M}–{end:%H:%M} IST "
+        f"on {start:%a %d %b %Y}"
+    )
+
+
+def execution_lines(candidate: V3Candidate) -> list[tuple[str, str]]:
+    """How to actually execute one setup: the order, its validity, and its timing.
+
+    Shared by all three V3 surfaces — the console, the Markdown brief and the published
+    page — so none of them can describe the same plan differently.
+    """
+    plan = candidate.plan
+    if plan is None:
+        return []
+
+    long_side = candidate.direction == "long"
+    rows: list[tuple[str, str]] = []
+
+    # ── the order ─────────────────────────────────────────────────────────────
+    if plan.entry_rule == ENTRY_STOP_THROUGH and plan.entry_level:
+        through = abs(plan.entry / plan.entry_level - 1) * 100
+        rows.append((
+            "Entry",
+            f"{'Buy' if long_side else 'Sell'}-stop at {plan.entry:,.2f} — "
+            f"{through:.2f}% {'above' if long_side else 'below'} the "
+            f"{TRIGGER_TIMEFRAME_MINUTES}m flag "
+            f"{'high' if long_side else 'low'} at {plan.entry_level:,.2f}. "
+            "Resting order: not a trade until price trades through it.",
+        ))
+    else:
+        rows.append((
+            "Entry",
+            f"{'Buy' if long_side else 'Sell'} at market or limit near {plan.entry:,.2f} — "
+            f"the {candidate.setup.kind.value} confirmed on the trigger bar, so that bar's "
+            "close is the entry. There is no further level to wait for.",
+        ))
+
+    # ── when the quoted plan stops being this trade ───────────────────────────
+    rows.append((
+        "Valid fill",
+        f"{plan.entry_min:,.2f} – {plan.entry_max:,.2f}. The stop is a fixed structural "
+        f"level, so a fill outside this band puts it beyond V3's "
+        f"{settings.min_stop_pct:.1f}–{settings.v3_max_stop_pct:.1f}% rule — a different "
+        "trade, not a worse one.",
+    ))
+
+    # ── the bar the geometry was measured on ──────────────────────────────────
+    if plan.trigger_bar is not None:
+        rows.append((
+            "Trigger",
+            f"{_bar_span(plan.trigger_bar)} — "
+            + (
+                "the newest bar in this scan's data."
+                if plan.is_live
+                else f"{plan.bars_ago} bars before the data ends."
+            ),
+        ))
+
+    # ── how long the trade is allowed to take ─────────────────────────────────
+    if plan.trigger_bar is not None:
+        stop_date = _time_stop(plan.trigger_bar.date(), settings.max_holding_sessions)
+        rows.append((
+            "Exit by",
+            f"hold {settings.min_holding_sessions}–{settings.max_holding_sessions} "
+            f"sessions; time-stop at the close on {stop_date:%a %d %b %Y} "
+            "(weekdays only — an NSE holiday in between pushes it out a day).",
+        ))
+
+    rows.append((
+        "Target basis",
+        f"4R is measured from the fill: {plan.target:,.2f} assumes entry at "
+        f"{plan.entry:,.2f} with {plan.risk:,.2f} of risk.",
+    ))
+    return rows
 
 
 def render_v3(scan: V3Scan) -> Group:
@@ -142,6 +254,7 @@ def _detail(candidate: V3Candidate) -> Text:
             if plan.nearest_barrier
             else ""
         )
+        + "".join(f"\n  [dim]{label}:[/] {value}" for label, value in execution_lines(candidate))
         + f"\n  [dim]Score parts:[/] "
         + " · ".join(f"{k.replace('_', ' ')} {v:.0f}" for k, v in modules.items())
     )
@@ -227,6 +340,10 @@ def build_v3_markdown(scan: V3Scan) -> str:
                 f"{candidate.daily_note}"
                 + (f" → 60m {candidate.hourly_note}" if candidate.hourly_note else ""),
                 f"- **Where I'm wrong:** {plan.invalidation}",
+                "",
+                "**How to execute it**",
+                "",
+                *(f"- **{label}:** {value}" for label, value in execution_lines(candidate)),
                 "",
             ]
 

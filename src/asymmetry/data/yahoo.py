@@ -10,7 +10,7 @@ Every call goes through a paced client and the disk cache — see cache.py for w
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, time
 
 import pandas as pd
 from loguru import logger
@@ -19,6 +19,14 @@ from ..config import settings
 from .cache import PacedClient, cache
 
 _BASE = "https://query1.finance.yahoo.com/v8/finance/chart/"
+
+# NSE's regular session, in exchange time. Bars are stamped with their *start*, so 09:15 to
+# 15:30 is 25 fifteen-minute intervals — yet the feed returns 26 bars a session. The extra
+# one is stamped 15:30 and is the closing print, not a 15-minute window: nothing trades
+# between 15:30 and 15:45. Anything describing a bar's time span has to know this or it will
+# quote an interval that does not exist.
+SESSION_OPEN = time(9, 15)
+SESSION_CLOSE = time(15, 30)
 
 _client = PacedClient(
     min_interval_sec=settings.yahoo_min_interval_sec,

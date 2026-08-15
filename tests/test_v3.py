@@ -19,6 +19,8 @@ from asymmetry.engines.setups import (
     detect_setup,
 )
 from asymmetry.engines.v3 import (
+    ENTRY_CONFIRMED,
+    ENTRY_STOP_THROUGH,
     V3Reject,
     average_daily_range,
     build_v3_plan,
@@ -350,3 +352,149 @@ def test_reclaim_entry_is_at_price_not_session_high():
         pytest.skip("synthetic reclaim did not clear the filters")
     # Entry is the current close, not the prior session extreme.
     assert plan.entry == pytest.approx(float(intraday["close"].iloc[-1]), rel=1e-6)
+
+
+# ── Execution: what order, at what price, on which bar, until when ────────────
+#
+# A price alone does not describe a trade. 826.90 is a resting stop order for one setup and
+# "you are already in" for another, and the difference is the whole strategy.
+
+
+def test_reclaim_reports_a_confirmed_entry_with_no_level_to_wait_for():
+    intraday, daily = _plan_inputs(swing_pct=0.9)
+    try:
+        plan = build_v3_plan(
+            direction="long", intraday=intraday, daily=daily, weekly=daily,
+            adr_pct=6.0, atr_pct=6.0, setup=SetupType.RECLAIM,
+        )
+    except V3Reject:
+        pytest.skip("synthetic reclaim did not clear the filters")
+    assert plan.entry_rule == ENTRY_CONFIRMED
+    assert plan.entry_level is None
+    assert plan.entry == pytest.approx(float(intraday["close"].iloc[-1]), rel=1e-6)
+
+
+def test_continuation_reports_a_stop_order_just_through_its_level():
+    intraday, daily = _plan_inputs(swing_pct=0.9)
+    try:
+        plan = build_v3_plan(
+            direction="long", intraday=intraday, daily=daily, weekly=daily,
+            adr_pct=6.0, atr_pct=6.0, setup=SetupType.CONTINUATION,
+        )
+    except V3Reject:
+        pytest.skip("synthetic continuation did not clear the filters")
+    assert plan.entry_rule == ENTRY_STOP_THROUGH
+    assert plan.entry_level is not None
+    # Through the level, but never a chase: the engine caps entry at 0.05% beyond it.
+    assert plan.entry_level < plan.entry <= plan.entry_level * 1.0005 + 0.01
+
+
+def test_plan_records_the_setup_it_was_built_for():
+    """The renderers describe the order from this, so NONE would mislabel every card."""
+    intraday, daily = _plan_inputs(swing_pct=0.9)
+    try:
+        plan = build_v3_plan(
+            direction="long", intraday=intraday, daily=daily, weekly=daily,
+            adr_pct=6.0, atr_pct=6.0, setup=SetupType.RECLAIM,
+        )
+    except V3Reject:
+        pytest.skip("synthetic reclaim did not clear the filters")
+    assert plan.setup is SetupType.RECLAIM
+
+
+@pytest.mark.parametrize("direction", ["long", "short"])
+def test_valid_fill_band_is_the_stop_rule_solved_for_entry(direction):
+    """A fill at either edge must land exactly on the configured stop limits."""
+    if direction == "long":
+        intraday, daily = _plan_inputs(swing_pct=0.9)
+        weekly = daily
+    else:
+        high = 100.0
+        intraday = bars([high] * 40 + [high * 1.01] + [high] * 30, spread=0.00005)
+        daily = weekly = bars(list(np.linspace(120, high, 200)), spread=0.02)
+
+    try:
+        plan = build_v3_plan(
+            direction=direction, intraday=intraday, daily=daily, weekly=weekly,
+            adr_pct=6.0, atr_pct=6.0, setup=SetupType.RECLAIM,
+        )
+    except V3Reject:
+        pytest.skip("synthetic setup did not clear the filters")
+
+    assert plan.entry_min < plan.entry_max
+    assert plan.entry_min <= plan.entry <= plan.entry_max
+
+    for edge, expected in (
+        (plan.entry_min, settings.min_stop_pct if direction == "long" else settings.v3_max_stop_pct),
+        (plan.entry_max, settings.v3_max_stop_pct if direction == "long" else settings.min_stop_pct),
+    ):
+        assert abs(edge - plan.stop) / edge * 100 == pytest.approx(expected, abs=0.02)
+
+
+def test_live_trigger_still_carries_its_bar_timestamp():
+    """The bar is recorded even when live.
+
+    Dropping it for the bare word "live" is what let an archive-tier scan of a session that
+    closed hours earlier present itself as actionable right now.
+    """
+    intraday, daily = _plan_inputs(swing_pct=0.9)
+    plan = build_v3_plan(
+        direction="long", intraday=intraday, daily=daily, weekly=daily,
+        adr_pct=6.0, atr_pct=6.0, setup=SetupType.CONTINUATION,
+    )
+    assert plan.is_live
+    assert plan.trigger_bar is not None
+    assert plan.trigger_bar == intraday.index[-1]
+
+
+def test_time_stop_counts_weekdays_and_skips_the_weekend():
+    from datetime import date
+
+    from asymmetry.report.v3_report import _time_stop
+
+    # Thursday + 5 sessions lands on the following Thursday, not the Tuesday a naive
+    # +5 days would give.
+    assert _time_stop(date(2026, 8, 13), 5) == date(2026, 8, 20)
+    # Friday + 1 session is the next Monday.
+    assert _time_stop(date(2026, 8, 14), 1) == date(2026, 8, 17)
+
+
+def test_bar_span_never_quotes_a_window_after_the_close():
+    """The feed returns 26 bars for a 25-interval session.
+
+    The extra bar is stamped 15:30 — the closing print. Rendering it as "15:30-15:45"
+    quotes an interval in which NSE is shut, which is worse than saying nothing.
+    """
+    from asymmetry.report.v3_report import _bar_span
+
+    tz = "Asia/Kolkata"
+    assert "13:45–14:00" in _bar_span(pd.Timestamp("2026-08-14 13:45", tz=tz))
+    assert "15:15–15:30" in _bar_span(pd.Timestamp("2026-08-14 15:15", tz=tz))
+
+    closing = _bar_span(pd.Timestamp("2026-08-14 15:30", tz=tz))
+    assert "closing print" in closing
+    assert "15:45" not in closing
+
+
+def test_execution_lines_state_order_band_bar_and_deadline():
+    from asymmetry.engines.setups import SetupSignal
+    from asymmetry.engines.v3_scan import V3Candidate
+    from asymmetry.report.v3_report import execution_lines
+
+    intraday, daily = _plan_inputs(swing_pct=0.9)
+    plan = build_v3_plan(
+        direction="long", intraday=intraday, daily=daily, weekly=daily,
+        adr_pct=6.0, atr_pct=6.0, setup=SetupType.CONTINUATION,
+    )
+    candidate = V3Candidate(
+        symbol="TEST", direction="long", plan=plan,
+        setup=SetupSignal(kind=SetupType.CONTINUATION, found=True, level=90.0),
+    )
+    labels = [label for label, _ in execution_lines(candidate)]
+    assert labels == ["Entry", "Valid fill", "Trigger", "Exit by", "Target basis"]
+
+    values = dict(execution_lines(candidate))
+    assert "Buy-stop" in values["Entry"]
+    assert f"{plan.entry_min:,.2f}" in values["Valid fill"]
+    assert "15m bar" in values["Trigger"]
+    assert "time-stop" in values["Exit by"]

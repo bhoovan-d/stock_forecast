@@ -39,6 +39,15 @@ from .structure import classify_structure, find_pivots
 # Horizons for relative strength (V3 §5): one week, one month, one quarter.
 RS_HORIZONS = (5, 20, 60)
 
+# How the entry order is placed. A reclaim has already confirmed, so the trigger bar's close
+# is the entry; a continuation is not a trade until price clears the flag, so the order rests
+# beyond it. Renderers key their wording off these.
+ENTRY_CONFIRMED = "confirmed"
+ENTRY_STOP_THROUGH = "stop-through"
+
+# Intraday bar length. Entry, stop and trigger timing are all measured on this timeframe.
+TRIGGER_TIMEFRAME_MINUTES = 15
+
 
 # ── Volatility: ATR and ADR (§10) ─────────────────────────────────────────────
 
@@ -238,6 +247,24 @@ class V3Plan:
     triggered_at: str = "live"
     bars_ago: int = 0
 
+    # ── How the entry is actually executed ────────────────────────────────────
+    # The entry price alone does not describe a trade: 826.90 is a resting buy-stop for one
+    # setup and "you are already in, at market" for another. These record which, and the
+    # level the price was derived from, so no renderer has to re-derive it and get it wrong.
+    #
+    # ENTRY_CONFIRMED  reclaim — confirmation already happened on the trigger bar
+    # ENTRY_STOP_THROUGH  continuation — resting order just beyond the flag boundary
+    entry_rule: str = ENTRY_CONFIRMED
+    entry_level: float | None = None
+    # The band of fills where the *fixed* structural stop still sits inside V3's 0.5–1.5%
+    # rule. Fill outside it and the trade is no longer the one that was screened.
+    entry_min: float = 0.0
+    entry_max: float = 0.0
+    # Start of the 15m bar the geometry was measured on, IST. Carried for every plan,
+    # including a live one — an untimed "live" is what made an archive-tier scan of a closed
+    # session claim to be actionable right now.
+    trigger_bar: pd.Timestamp | None = None
+
     @property
     def is_live(self) -> bool:
         return self.bars_ago == 0
@@ -287,6 +314,8 @@ def _plan_at_bar(
     close = float(intraday["close"].iloc[-1])
     last_bar = intraday.iloc[-1]
 
+    entry_level: float | None = None
+    entry_rule = ENTRY_CONFIRMED
     if setup is SetupType.RECLAIM:
         # Already confirmed: enter on the current bar, not at the day's extreme.
         entry = close if long_side else close
@@ -295,9 +324,11 @@ def _plan_at_bar(
         # Do not chase: if price has already run past the flag, the trade is the current
         # bar's edge rather than the stale breakout level.
         entry = min(max(close, float(last_bar["high"])), level * 1.0005) if close > level else level * 1.0005
+        entry_level, entry_rule = level, ENTRY_STOP_THROUGH
     else:
         level = float(session["low"].iloc[:-1].min())
         entry = max(min(close, float(last_bar["low"])), level * 0.9995) if close < level else level * 0.9995
+        entry_level, entry_rule = level, ENTRY_STOP_THROUGH
 
     # Stop: nearest 15m swing that is a genuine invalidation.
     #
@@ -335,6 +366,18 @@ def _plan_at_bar(
             f"invalidation only {stop_pct:.2f}% away "
             f"(min {settings.min_stop_pct:.1f}%) — inside noise, not a real level",
         )
+
+    # The same §13 band, solved for entry instead of for stop distance.
+    #
+    # The stop is a structural level and does not move, so a fill away from the quoted entry
+    # changes the stop *percentage* — and far enough out, the trade no longer satisfies the
+    # rule it was screened under. Reporting the band makes "is 831 still this trade?"
+    # answerable instead of a judgement call.
+    lo, hi = settings.min_stop_pct / 100, settings.v3_max_stop_pct / 100
+    if long_side:
+        entry_min, entry_max = stop / (1 - lo), stop / (1 - hi)
+    else:
+        entry_min, entry_max = stop / (1 + hi), stop / (1 + lo)
 
     target = entry + 4.0 * risk if long_side else entry - 4.0 * risk
     target_pct = abs(target / entry - 1) * 100
@@ -385,13 +428,18 @@ def _plan_at_bar(
         target_pct=round(target_pct, 2),
         quantity=quantity,
         invalidation=(
-            f"15m swing {'low' if long_side else 'high'} at {stop:,.2f}"
+            f"{TRIGGER_TIMEFRAME_MINUTES}m swing {'low' if long_side else 'high'} "
+            f"at {stop:,.2f}"
         ),
-        setup=SetupType.NONE,
+        setup=setup,
         nearest_barrier=round(barrier, 2) if barrier else None,
         barrier_blocks=barrier is not None,
         feasible=True,
         feasibility_note=note,
+        entry_rule=entry_rule,
+        entry_level=round(entry_level, 2) if entry_level is not None else None,
+        entry_min=round(entry_min, 2),
+        entry_max=round(entry_max, 2),
     )
 
 
@@ -472,6 +520,11 @@ def build_v3_plan(
             continue
 
         plan.bars_ago = offset
+        # Record the bar for every plan, not only for stale ones. Previously a hit on the
+        # newest bar dropped its timestamp for the bare word "live", which reads as "right
+        # now" no matter how old the data is — and an archive-tier scan runs against a
+        # session that closed hours or days ago.
+        plan.trigger_bar = window.index[-1]
         plan.triggered_at = (
             "live" if offset == 0 else str(window.index[-1].strftime("%d %b %H:%M"))
         )
