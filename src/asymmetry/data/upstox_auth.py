@@ -187,6 +187,12 @@ def login(timeout_sec: int = 180) -> str | None:
         return None
 
     update_env(token)
+    # `settings` was built from .env at import, so writing the file alone leaves this
+    # process holding the token that just expired — and anything verifying the login
+    # immediately afterwards then tests the *old* one and reports a working token as
+    # rejected. Since `auth` only runs when the previous token is dead, that false
+    # negative was guaranteed rather than occasional.
+    settings.upstox_access_token = token
     # Never log the token itself.
     logger.info(f"Access token written to {ENV_PATH}")
     return token
