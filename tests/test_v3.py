@@ -515,10 +515,26 @@ def test_execution_lines_state_order_band_bar_and_deadline():
         setup=SetupSignal(kind=SetupType.CONTINUATION, found=True, level=90.0),
     )
     labels = [label for label, _ in execution_lines(candidate)]
-    assert labels == ["Entry", "Valid fill", "Trigger", "Exit by", "Target basis"]
+    assert labels == ["Entry", "Valid fill", "Trigger", "Act on", "Exit by", "Target basis"]
 
     values = dict(execution_lines(candidate))
     assert "Buy-stop" in values["Entry"]
     assert f"{plan.entry_min:,.2f}" in values["Valid fill"]
     assert "15m bar" in values["Trigger"]
     assert "time-stop" in values["Exit by"]
+    # A setup found after the close is for the next session, not a record of the past.
+    assert "session" in values["Act on"]
+
+
+def test_a_post_close_setup_points_at_the_next_session():
+    """Friday's closing print is a setup for Monday, and must say so.
+
+    Without it, a trigger stamped "Fri 14 Aug" reads as history and nothing prompts the
+    reader to re-check the price before acting.
+    """
+    from datetime import date
+
+    from asymmetry.report.v3_report import _next_session
+
+    assert _next_session(date(2026, 8, 14)) == date(2026, 8, 17)   # Friday -> Monday
+    assert _next_session(date(2026, 8, 17)) == date(2026, 8, 18)

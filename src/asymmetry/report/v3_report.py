@@ -13,7 +13,7 @@ chain (§12). Two reporting choices follow directly from the spec:
 
 from __future__ import annotations
 
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from rich.console import Group
 from rich.table import Table
@@ -44,6 +44,18 @@ def _time_stop(start: date, sessions: int) -> date:
         cursor += timedelta(days=1)
         if cursor.weekday() < 5:
             remaining -= 1
+    return cursor
+
+
+def _next_session(after: date) -> date:
+    """The next weekday after `after` — the session a post-close setup is acted on.
+
+    Weekday-based for the same reason as the time stop: no forward NSE holiday calendar
+    exists here, so a holiday pushes the real session out by a day.
+    """
+    cursor = after + timedelta(days=1)
+    while cursor.weekday() >= 5:
+        cursor += timedelta(days=1)
     return cursor
 
 
@@ -173,6 +185,36 @@ def execution_lines(candidate: V3Candidate) -> list[tuple[str, str]]:
                 else f"{plan.bars_ago} bars before the data ends."
             ),
         ))
+
+    # ── when to act on it ─────────────────────────────────────────────────────
+    #
+    # A scan run after the close describes a setup for the *next* session, not a trade that
+    # has already happened. Without saying so, a trigger stamped "Fri 14 Aug" reads as
+    # history — and the reader has no prompt to re-check the price before acting on Monday.
+    if plan.trigger_bar is not None:
+        triggered = plan.trigger_bar
+        # The session is over once its *final* bar has begun — that bar starts one interval
+        # before the close, so 15:15 is as much "after hours" as the 15:30 closing print.
+        # Testing only for the closing print told a reader to act "this session" on a setup
+        # whose session had already ended.
+        last_bar_start = (
+            datetime.combine(triggered.date(), SESSION_CLOSE)
+            - timedelta(minutes=TRIGGER_TIMEFRAME_MINUTES)
+        ).time()
+        if triggered.time() >= last_bar_start:
+            act = _next_session(triggered.date())
+            rows.append((
+                "Act on",
+                f"the next session, {act:%a %d %b %Y}. The quoted entry is "
+                f"{triggered:%a %d %b}'s close, so check the opening price is inside the "
+                "valid-fill band above before acting — outside it, re-run the scan rather "
+                "than adjusting the levels.",
+            ))
+        else:
+            rows.append((
+                "Act on",
+                "this session, while price is inside the valid-fill band above.",
+            ))
 
     # ── how long the trade is allowed to take ─────────────────────────────────
     if plan.trigger_bar is not None:
