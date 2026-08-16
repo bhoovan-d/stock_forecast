@@ -113,17 +113,26 @@ jobs:
           CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        # Restricted to the liquidity sweep. Replayed on real 15m triggers, reclaim clears
-        # break-even (461 trades, 26%, +0.32R against the 20% a 4R target needs) while the
-        # high-tight flag does not (1,178 trades, 5%, -0.76R) — and the flag generates most
-        # of the signals, so leaving it in means publishing mostly the losing half. The
-        # detector stays in the codebase because the failure may be the implementation
+        # Two setups, both measured above break-even on real 15m triggers:
+        #
+        #     reclaim         682 trades   25%   +0.30R   (ungated — see below)
+        #     base-breakout    65 trades   34%   +0.75R   (+1.29R once carry-gated)
+        #
+        # The high-tight flag is deliberately absent. It loses money before the carry gate
+        # (1,780 trades, 4%, -0.80R) and still loses after it (-0.25R), and it generates
+        # most of the raw signals, so including it means publishing mostly the losing half.
+        # The detector stays in the codebase because the failure may be the implementation
         # rather than the pattern; it just should not reach the site on this evidence.
         #
-        # Selectivity is now below V3's own 10-15/month target, which is the honest cost of
-        # the restriction and NOT to be answered by loosening the score floor (§17: the
-        # response to too few setups is patience, never a lower threshold).
-        run: python -m asymmetry.cli v3 --no-refresh --per-day 3 --setup reclaim
+        # base-breakout rests on 65 trades and its gated cohort on 8. That is thin, which is
+        # why it publishes alongside reclaim rather than instead of it.
+        #
+        # Selectivity sits below V3's own 10-15/month target. That is the honest cost of the
+        # restriction and NOT to be answered by loosening the score floor (§17: the response
+        # to too few setups is patience, never a lower threshold).
+        run: >
+          python -m asymmetry.cli v3 --no-refresh --per-day 3
+          --setup reclaim --setup base-breakout
 
       - name: Build static site
         run: python -m asymmetry.cli site
