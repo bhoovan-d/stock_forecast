@@ -126,16 +126,34 @@ In its favour:
 - it is the same failure mode already measured once on this codebase, so the mechanism is
   not speculative.
 
-## Recommendation
+## Decision taken
 
-**Do not ship hard filter 5 armed by default on this evidence.** Nothing here shows it
-selecting better trades, and on the setups with edge it looks actively harmful — while
-costing roughly 93% of candidates (10 of 135 survived on 14 Aug).
+**`v3_require_catalyst` now defaults to `False`.** Nothing here shows the filter selecting
+better trades, on the setups with edge it looks actively harmful, and it refuses ~93% of
+candidates (10 of 135 on 14 Aug, PIIND among the refused).
 
-The decision is the owner's, and the filter was requested deliberately. The switch already
-exists: `v3_require_catalyst` in settings, `--no-require-catalyst` per run.
+The filter is **kept, not deleted**, and `--require-catalyst` arms it for a run. Two
+reasons it stays: the code is correct and tested, and what has been measured is the *weak*
+definition, so the case is unproven rather than closed.
 
-What would change the answer: re-run `catalyst-backfill` **with** the LLM across the window
-and repeat this measurement. That is now affordable — groq's configured model had been
-decommissioned and every call to it burned a 60s timeout before the cascade moved on, which
-is fixed.
+`test_filter_is_disarmed_by_default_on_the_measurement` pins the default, so restoring it
+is a decision someone has to make on purpose rather than a tidy-up.
+
+## Why the strong definition is still unmeasured — and may stay that way
+
+The obvious next step is to re-run the backfill **with** the LLM and repeat. That was
+started on 18 Aug (and is now affordable: groq's configured model had been decommissioned
+and every call burned a 60s timeout before the cascade moved on, which is fixed). Early
+results say it will not settle much:
+
+* **LLM-scored catalysts from filings are very sparse.** Three days of backfill produced
+  **two** records. Most filings genuinely carry no expectation change — which is the prompt
+  working as designed, since it is built to score forward-numbers impact rather than tone,
+  and "Board Meeting Intimation" has none.
+* **The richer source cannot be backfilled at all.** News RSS serves roughly 48 hours. The
+  live filter sees filings *and* news; any historical measurement sees filings only.
+
+So the strong-definition cohort is likely to be too small to measure on the available
+window, and a historical measurement can never fully represent the live filter. That is an
+argument for leaving the filter off by default and revisiting it with *forward*-collected
+data, not for assuming it would have helped.

@@ -140,13 +140,24 @@ class Settings(BaseSettings):
     # every published setup to answer "why now", and until now a name with no answer was
     # merely scored down (catalyst weight 0.12, neutral 50) and published anyway.
     #
-    # What it costs, measured on 14 Aug 2026: of 135 stage-one candidates, 10 carried a
-    # catalyst note. PIIND — the one name actually published that day — was not among them
-    # and would have been refused. Read that as a coverage statement as much as a market
-    # one: the news pass is capped at 120 items and 90 filings and the BSE/NSE announcement
-    # APIs are blocked here, so "no catalyst found" partly means "not found by what we can
-    # reach". That is the honest risk in this filter and the reason it is a switch.
-    v3_require_catalyst: bool = True
+    # **Default off, on the measurement.** It was armed when first added and then measured
+    # the same day (docs/2026-08-18-catalyst-filter-measurement.md), and the measurement
+    # does not support it. Blended it looks positive (+0.17R gate-off, +0.04R inside the
+    # admitted population) but both figures are setup mix: per setup it removes edge from
+    # the two that have any — base-breakout +0.01R with a catalyst against +0.96R without,
+    # reclaim +0.06R against +0.18R — and inside the admitted population 69% of the
+    # with-catalyst cohort's total R comes from 3 of its 50 trades. The largest
+    # like-for-like comparison available, 47 reclaims against 597, says the filter costs
+    # ~0.12R per trade. It also refuses ~93% of candidates: 10 of 135 survived on 14 Aug,
+    # PIIND — the only name published that day — among the refused.
+    #
+    # Not deleted, because the measurement is of the *weak* definition. The backfill behind
+    # it is rule-routed, so "catalyst" there means a material filing occurred, not a model
+    # judging an expectation change. §12 asks for the second, and it is still unmeasured:
+    # filings-derived LLM catalysts are very sparse and the news feeds cannot be
+    # backfilled at all (~48h of history). Turn it on with `--require-catalyst` when there
+    # is evidence for it.
+    v3_require_catalyst: bool = False
 
     # ── Master scoring weights (Engineer Brief §17) ───────────────────────────
     # Engineering defaults, explicitly *not* claimed optimal. The brief is emphatic that

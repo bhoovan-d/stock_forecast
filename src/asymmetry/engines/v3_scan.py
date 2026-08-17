@@ -421,10 +421,6 @@ def run_v3_scan(
     for candidate in shortlist:
         symbol = yahoo.to_yahoo_symbol(candidate.symbol)
 
-        group = history[history["symbol"] == candidate.symbol].sort_values("dt").set_index("dt")
-        daily = group[["high", "low", "close", "volume"]].astype(float)
-        weekly = _resample_weekly(daily)
-
         candidate.catalyst_score = catalyst_scores.get(candidate.symbol, 50.0)
         candidate.catalyst_note = catalyst_notes.get(candidate.symbol, "")
 
@@ -432,10 +428,10 @@ def run_v3_scan(
 
         # ── Hard filter 5: the "why now" must have an answer (§12) ────────────
         #
-        # First, because it is free. Every other filter in stage 2 costs a paced network
-        # fetch; this one reads a dict already in memory, so refusing here is refusing
-        # before any money is spent. On 14 Aug 2026 that removed 125 of 135 candidates
-        # before a single 60m bar was requested.
+        # First in the loop, because it is the only free rejection available. Everything
+        # below costs either a paced network fetch or a per-symbol slice of the full
+        # history frame; this reads a dict already in memory. On 14 Aug 2026 it removed
+        # 125 of 135 candidates before any of that was paid for.
         if scan.catalyst_required and not candidate.has_catalyst:
             candidate.rejected_by = "catalyst"
             candidate.reject_detail = (
@@ -445,6 +441,10 @@ def run_v3_scan(
             scan.reject_counts["catalyst"] = scan.reject_counts.get("catalyst", 0) + 1
             scan.catalyst_rejected += 1
             continue
+
+        group = history[history["symbol"] == candidate.symbol].sort_values("dt").set_index("dt")
+        daily = group[["high", "low", "close", "volume"]].astype(float)
+        weekly = _resample_weekly(daily)
 
         # ── Stage 2a: the carry test, before any 15m data is paid for ─────────
         #

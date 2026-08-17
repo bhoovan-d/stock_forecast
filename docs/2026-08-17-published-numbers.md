@@ -132,8 +132,15 @@ technical invalidity, and a missing news catalyst is not.
 
 **What it costs.** On 14 Aug 2026, of 135 stage-one candidates, **10 carried a catalyst
 note**. PIIND — the only name published that day — was not among them and would have been
-refused. Expect materially fewer published setups, which §17 says is the correct direction
-for a change to move things.
+refused.
+
+**It was then measured, and it defaults to off.** Later the same day the replay was
+extended to cover it, and the result does not support arming it: per setup it removes edge
+from the two that have any, and the blended figures that appear to support it are setup
+mix. The filter is kept and switchable (`--require-catalyst`) rather than deleted, because
+what was measured is the weak, filings-only definition. Full analysis:
+`2026-08-18-catalyst-filter-measurement.md`. **The rest of this section describes the
+machinery, which is unchanged and still runs when the filter is armed.**
 
 **The honest risk.** "No catalyst found" is partly a statement about reach, not about the
 market. The news pass is capped at 120 items and 90 filings, the NSE/BSE announcement APIs
@@ -150,11 +157,10 @@ Three guards follow from that:
 - `--no-require-catalyst` turns it off for a run, and the page states how many filters were
   armed rather than hard-coding a count.
 
-**It is unmeasured.** `v3_backtest` calls `detect_setup` / `build_v3_plan` directly, so it
-does not run this filter. Every expectancy figure in `CLAUDE.md` predates it and none of
-them says anything about whether requiring a catalyst helps or hurts. That is the next
-thing worth measuring, and it is measurable: the catalyst store is bounded by `as_of`, so a
-replay can ask the same question point-in-time.
+**Every other expectancy figure predates it.** `v3_backtest` builds plans through
+`detect_setup` / `build_v3_plan`, which never see this filter; the catalyst cohorts are
+tagged alongside instead, so the carry-gate numbers in `CLAUDE.md` are unaffected by it in
+either direction.
 
 ## One thing this document still does not fix
 

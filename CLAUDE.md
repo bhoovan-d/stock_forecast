@@ -39,10 +39,14 @@ sharing one constant would silently retune the deployed daily brief.
 
 ## Rules that are not negotiable
 
-**Hard filters are five** (V3 §16 said four; the fifth was added 18 Aug 2026 on the owner's
-explicit instruction): 4R feasibility, stop distance, liquidity, basic technical validity,
-and **a catalyst must exist**. Nothing else may reject, and a sixth needs the same explicit
-decision — not a judgement call mid-edit.
+**Four hard filters are armed; a fifth exists and is switched off.** Armed: 4R feasibility,
+stop distance, liquidity, basic technical validity. Nothing else may reject, and a new one
+needs an explicit decision — not a judgement call mid-edit.
+
+The fifth — **a catalyst must exist** (§12) — was added 18 Aug 2026 on the owner's explicit
+instruction, measured the same day, and **defaults to off because the measurement does not
+support it**. It is kept rather than deleted because what was measured is the weak
+definition (see below). `--require-catalyst` arms it for a run.
 
 When the carry gate rejects, it still reports under *technical validity* — a setup with no
 higher-timeframe carry structure is not technically valid for a 1–5 session hold. The
@@ -110,7 +114,11 @@ Read honestly, and keep reading it honestly in any doc you write:
 - **The base-breakout gated result rests on 8 trades.** It agrees with the mechanism and
   establishes nothing.
 - **The flag loses money even after gating.** It stays in the codebase because the failure
-  may be the implementation rather than the pattern; it must not reach the site.
+  may be the implementation rather than the pattern; it must not reach the site. This is
+  now enforced rather than merely stated: `asymmetry v3` defaults to `--setup reclaim
+  --setup base-breakout`, the same pair CI publishes. Until 18 Aug 2026 only CI's flags
+  enforced it, so a local `v3` run followed by `site` would have published a flag trade —
+  verified by doing exactly that.
 - **One market period.** Intraday history is capped at ~60–80 days upstream.
 - **The 80 symbols are chosen with hindsight.** With no explicit list, `run_v3_backtest`
   ranks *today's* `stage_one` output by setup quality and takes the top N, then replays

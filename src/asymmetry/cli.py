@@ -323,8 +323,15 @@ def v3(
         2, help="Max setups shown per day (V3 targets ~10-15/month). 0 = uncapped."
     ),
     setup: list[str] = typer.Option(
-        None, "--setup",
-        help="Restrict to setup types, e.g. --setup reclaim. Repeatable.",
+        # Defaults to the two setups measured above break-even, which is what CI publishes.
+        # It used to default to *all* of them, so `asymmetry v3` followed by `asymmetry
+        # site` could put a high-tight flag on the public page — the one setup measured to
+        # lose money even after gating, and the one README says must not reach the site.
+        # CI was the only thing enforcing that, via flags a local run had no reason to pass.
+        # Ask for the flag explicitly (`--setup continuation`) to look at it.
+        ["reclaim", "base-breakout"], "--setup",
+        help="Restrict to setup types. Repeatable. Default: the two measured above "
+             "break-even; continuation must be asked for by name.",
     ),
     require_catalyst: bool = typer.Option(
         None, "--require-catalyst/--no-require-catalyst",

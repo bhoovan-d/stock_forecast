@@ -57,8 +57,15 @@ def test_presence_is_tested_on_the_note_not_the_score():
     assert neutral_event.has_catalyst is True
 
 
-def test_settings_default_arms_the_filter():
-    assert settings.v3_require_catalyst is True
+def test_filter_is_disarmed_by_default_on_the_measurement():
+    """Off by default, and this asserts it deliberately rather than incidentally.
+
+    The filter exists and works; the measurement does not support arming it. Flipping this
+    back to True is a decision that needs evidence — see
+    `docs/2026-08-18-catalyst-filter-measurement.md` — not a default someone restores while
+    tidying.
+    """
+    assert settings.v3_require_catalyst is False
 
 
 # ── The directional bug this filter's implementation exposed ──────────────────
