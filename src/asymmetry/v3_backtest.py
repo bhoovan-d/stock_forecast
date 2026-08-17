@@ -58,6 +58,7 @@ from loguru import logger
 from .config import settings
 from .data import yahoo
 from .engines.carry import assess_carry, gate_applies
+from .engines.catalyst import CatalystHistory
 from .engines.setups import detect_setup
 from .engines.v3 import V3Reject, average_daily_range, build_v3_plan
 from .engines.indicators import atr
@@ -86,6 +87,15 @@ class Trade:
     carry_score: float = 0.0
     carry_failed: str = ""
     carry_applies: bool = True      # whether the gate may reject this setup at all
+    # The fifth hard filter, tagged the same way and for the same reason. `catalyst_covered`
+    # is not the same question as `has_catalyst`: it asks whether the store knew anything at
+    # all about this date. A decision from before the store existed has no catalyst because
+    # none was ever collected, and counting that as "no catalyst" would measure the
+    # collection start date and report it as a market fact.
+    catalyst_covered: bool = False
+    has_catalyst: bool = False
+    catalyst_score: float = 50.0
+    catalyst_note: str = ""
 
     @property
     def admitted(self) -> bool:
@@ -109,12 +119,31 @@ class BacktestResult:
 
     def gated(self) -> BacktestResult:
         """The same run, keeping only what the engine would actually have taken."""
+        return self._subset(lambda t: t.admitted)
+
+    def _subset(self, predicate) -> BacktestResult:
         return BacktestResult(
-            trades=[t for t in self.trades if t.admitted],
+            trades=[t for t in self.trades if predicate(t)],
             symbols_tested=self.symbols_tested,
             sessions_spanned=self.sessions_spanned,
             carry_unavailable=self.carry_unavailable,
         )
+
+    # ── The catalyst filter, measured only where it could be ──────────────────
+
+    @property
+    def catalyst_covered(self) -> BacktestResult:
+        """Trades whose decision date the catalyst store actually knew about.
+
+        Every catalyst comparison is made inside this subset. Outside it "no catalyst" means
+        "nothing was collected", and a cohort built on that would be measuring when
+        collection started.
+        """
+        return self._subset(lambda t: t.catalyst_covered)
+
+    @property
+    def catalyst_uncovered(self) -> int:
+        return sum(not t.catalyst_covered for t in self.trades)
 
     # ── headline ──────────────────────────────────────────────────────────────
 
@@ -237,6 +266,7 @@ def backtest_symbol(
     horizon_sessions: int = 5,
     bars_per_session: int = 25,
     step_bars: int = 5,
+    catalysts=None,
 ) -> list[Trade]:
     """Replay the engine's own triggers over the available 15m history for one symbol."""
     intraday = yahoo.fetch_chart(yahoo.to_yahoo_symbol(symbol), range_="60d", interval="15m")
@@ -304,12 +334,22 @@ def backtest_symbol(
             min_headroom_score=settings.v3_carry_min_headroom_score,
         )
 
+        # The catalyst as known on the decision date — same lookback and same freshness
+        # weighting the live scan uses, via the shared aggregator.
+        catalyst_score, catalyst_note, covered = 50.0, "", False
+        if catalysts is not None:
+            covered = catalysts.covered(as_of)
+            if covered:
+                catalyst_score, catalyst_note = catalysts.at(symbol, as_of)
+
         trade = Trade(
             symbol=symbol, direction=plan.direction, setup=setup.kind.value,
             entered_at=intraday.index[i], entry=plan.entry, stop=plan.stop,
             target=plan.target, stop_pct=plan.stop_pct,
             carry_passed=carry.passes, carry_score=carry.score,
             carry_failed=carry.failed, carry_applies=gate_applies(setup.kind),
+            catalyst_covered=covered, has_catalyst=bool(catalyst_note),
+            catalyst_score=catalyst_score, catalyst_note=catalyst_note,
         )
         trades.append(_resolve_forward(intraday, i, trade, max_bars))
         busy_until = i + trade.bars_held
@@ -340,6 +380,13 @@ def run_v3_backtest(
     history = history.copy()
     history["dt"] = pd.to_datetime(history["date"])
 
+    catalysts = CatalystHistory(end=as_of)
+    if catalysts.empty:
+        logger.warning(
+            "[v3-backtest] the catalyst store is empty — the catalyst cohort will be "
+            "unmeasurable. Populate it with `asymmetry catalyst-backfill`."
+        )
+
     result = BacktestResult()
     started = time.time()
     logger.info(f"[v3-backtest] replaying 15m triggers across {len(symbols)} symbols")
@@ -350,7 +397,9 @@ def run_v3_backtest(
         if len(daily) < 100:
             continue
 
-        trades = backtest_symbol(symbol, daily, horizon_sessions=horizon_sessions)
+        trades = backtest_symbol(
+            symbol, daily, horizon_sessions=horizon_sessions, catalysts=catalysts
+        )
         result.trades.extend(trades)
         result.symbols_tested += 1
         if position % 10 == 0:

@@ -15,6 +15,9 @@ outage must disarm the filter rather than refuse the universe and call it select
 
 from __future__ import annotations
 
+from datetime import date, datetime, timezone
+
+import pandas as pd
 import pytest
 
 from asymmetry.config import settings
@@ -108,6 +111,138 @@ def test_arming_states(require, use, notes, expected):
     else:
         status = "armed"
     assert status == expected
+
+
+# ── Measuring the filter: coverage is not absence ─────────────────────────────
+
+
+def _history(monkeypatch, rows, window_days: int = 5):
+    """A CatalystHistory over an in-memory store."""
+    import pandas as pd
+
+    from asymmetry.engines import catalyst as catalyst_mod
+
+    frame = pd.DataFrame(rows)
+    monkeypatch.setattr(
+        catalyst_mod, "load_catalysts", lambda **_kw: frame, raising=False
+    )
+    import asymmetry.storage as storage_mod
+
+    monkeypatch.setattr(storage_mod, "load_catalysts", lambda **_kw: frame)
+    return catalyst_mod.CatalystHistory(window_days=window_days, end=date(2026, 8, 14))
+
+
+def _row(day: str, symbol: str, score: float = 72.0):
+    return {
+        "published": datetime.fromisoformat(f"{day} 10:00:00"),
+        "symbol": symbol,
+        "score": score,
+        "catalyst_type": "earnings",
+        "rationale": "beat on margins",
+    }
+
+
+def test_a_date_before_the_store_is_uncovered_not_catalyst_free(monkeypatch):
+    """The failure this whole measurement exists to avoid.
+
+    The store began on 11 Aug 2026 and the intraday replay reaches back roughly sixty
+    sessions. Treating July's silence as "no catalyst" would measure the collection start
+    date and report it as a property of the market.
+    """
+    history = _history(monkeypatch, [_row("2026-08-12", "ZEEL")])
+
+    assert history.covered(date(2026, 7, 3)) is False
+    assert history.covered(date(2026, 8, 12)) is True
+    # Inside the 5-day lookback of a covered day, still covered.
+    assert history.covered(date(2026, 8, 14)) is True
+    # Far enough past it that the window no longer reaches any record.
+    assert history.covered(date(2026, 8, 25)) is False
+
+
+def test_covered_day_without_a_record_is_a_genuine_absence(monkeypatch):
+    """On a day the store knows about, a symbol with no record really had no catalyst —
+    which is exactly the fact the live filter acts on. Coverage is a property of the date,
+    not of the symbol."""
+    history = _history(monkeypatch, [_row("2026-08-12", "ZEEL")])
+
+    assert history.covered(date(2026, 8, 12)) is True
+    score, note = history.at("PIIND", date(2026, 8, 12))
+    assert note == ""
+    assert score == 50.0
+
+    score, note = history.at("ZEEL", date(2026, 8, 12))
+    assert note.startswith("earnings")
+    assert score > 50.0
+
+
+def test_lookup_is_point_in_time(monkeypatch):
+    """A catalyst published on the 13th must be invisible to a decision on the 12th."""
+    history = _history(monkeypatch, [_row("2026-08-13", "ZEEL")])
+
+    assert history.at("ZEEL", date(2026, 8, 12))[1] == ""
+    assert history.at("ZEEL", date(2026, 8, 13))[1] != ""
+
+
+def test_out_of_range_stored_scores_are_clamped_on_read():
+    """`CatalystExtraction.score` gained its 0-100 clamp after the fact, and the store still
+    holds rows from before it (JIOFIN 150.0, GODREJCP -25.0, both 12 Aug 2026). A stored
+    value cannot be re-derived, so the clamp has to exist on read as well or those rows drag
+    every average they appear in."""
+    from asymmetry.engines.catalyst import aggregate_catalysts
+
+    reference = datetime(2026, 8, 12, 23, 59, tzinfo=timezone.utc)
+    frame = pd.DataFrame([
+        {"published": datetime(2026, 8, 12, 10, 0), "score": 150.0,
+         "catalyst_type": "m&a", "rationale": "runaway row"},
+    ])
+    score, _note = aggregate_catalysts(frame, reference)
+    assert score <= 100.0
+
+    frame = pd.DataFrame([
+        {"published": datetime(2026, 8, 12, 10, 0), "score": -25.0,
+         "catalyst_type": "promoter_institutional", "rationale": "runaway row"},
+    ])
+    score, _note = aggregate_catalysts(frame, reference)
+    assert score >= 0.0
+
+
+def test_uncovered_trades_are_excluded_from_the_cohort_not_counted_against_it():
+    from asymmetry.v3_backtest import BacktestResult, Trade
+
+    def trade(covered: bool, has: bool) -> Trade:
+        return Trade(
+            symbol="X", direction="long", setup="reclaim",
+            entered_at=pd.Timestamp("2026-08-12 10:00"), entry=100.0, stop=99.0,
+            target=104.0, stop_pct=1.0, outcome="target", realised_r=4.0,
+            catalyst_covered=covered, has_catalyst=has,
+        )
+
+    result = BacktestResult(trades=[
+        trade(True, True), trade(True, False), trade(False, False), trade(False, False),
+    ])
+    assert len(result.catalyst_covered.trades) == 2
+    assert result.catalyst_uncovered == 2
+
+
+def test_report_says_unmeasured_when_nothing_is_covered():
+    """An empty cohort must read as "no measurement", never as a result."""
+    from rich.console import Console
+
+    from asymmetry.report.v3_report import render_backtest
+    from asymmetry.v3_backtest import BacktestResult, Trade
+
+    result = BacktestResult(trades=[
+        Trade(symbol="X", direction="long", setup="reclaim",
+              entered_at=pd.Timestamp("2026-07-03 10:00"), entry=100.0, stop=99.0,
+              target=104.0, stop_pct=1.0, outcome="target", realised_r=4.0,
+              catalyst_covered=False)
+    ])
+    console = Console(width=200, force_terminal=False, no_color=True)
+    with console.capture() as capture:
+        console.print(render_backtest(result))
+    out = capture.get()
+    assert "catalyst filter is unmeasured" in out
+    assert "statement about collection, not about catalysts" in out
 
 
 def test_outage_disarms_rather_than_rejecting_everything():

@@ -144,6 +144,89 @@ def _sast_record(filing) -> CatalystRecord:
     )
 
 
+def score_filings(
+    as_of: date, *, lookback_days: int = 3, llm_budget: int = 90, cascade=None
+) -> list[CatalystRecord]:
+    """Score BSE filings for a date range. The only historically fetchable catalyst source.
+
+    Split out from ``score_news`` so a backfill can reach into the past. The BSE
+    announcements API takes an explicit ``strPrevDate``/``strToDate`` pair, so filings for
+    July can still be pulled in August; the news RSS feeds serve roughly 48 hours and have
+    no archive at all, which is why a historical catalyst record is filings-only and any
+    measurement built on one understates live coverage.
+
+    Routed by subcategory rather than all sent to the LLM: most filings are procedural, and
+    paying for a model call to be told "Record Date scores zero" is pure waste.
+    """
+    records: list[CatalystRecord] = []
+    try:
+        filings = fetch_filings(as_of, lookback_days=lookback_days)
+    except Exception as exc:  # noqa: BLE001 — filings must never break the scan
+        logger.warning(f"[catalyst] filings failed: {exc}")
+        return records
+
+    routed = {"skip": 0, "event": 0, "sast": 0, "llm": 0}
+    for filing in filings:
+        decision = filing.route
+        routed[decision] += 1
+
+        if decision == "skip":
+            continue
+        if decision == "event":
+            records.append(_event_record(filing))
+            continue
+        if decision == "sast":
+            records.append(_sast_record(filing))
+            continue
+        # The LLM routes are the only ones that cost anything, and the only ones that can
+        # produce a *directional* catalyst. A backfill with no cascade still collects the
+        # rule-routed events, which is worth having but is a weaker catalyst definition —
+        # say so wherever the resulting measurement is reported.
+        if cascade is not None and cascade.available and llm_budget > 0:
+            llm_budget -= 1
+            records.extend(
+                _score_one(
+                    cascade, {filing.symbol}, filing.headline, filing.summary,
+                    filing.published, f"BSE {filing.subcategory or filing.category}",
+                    filing.url,
+                )
+            )
+
+    logger.info(
+        f"[catalyst] {as_of} filings routed — skip {routed['skip']}, event {routed['event']}, "
+        f"sast {routed['sast']}, llm {routed['llm']}"
+    )
+    return records
+
+
+def backfill_filings(
+    start: date, end: date, *, llm: bool = True, llm_budget_per_day: int = 40
+) -> int:
+    """Walk a date range collecting BSE filings into the catalyst store.
+
+    Exists so the catalyst filter can be measured at all. Day by day rather than one wide
+    range because the API paginates per query and a sixty-day pull silently truncates.
+    Returns the number of records saved.
+    """
+    cascade = build_cascade() if llm else None
+    if llm and (cascade is None or not cascade.available):
+        logger.warning("[catalyst] no LLM provider — backfilling rule-routed filings only")
+        cascade = None
+
+    total, cursor = 0, start
+    while cursor <= end:
+        if cursor.weekday() < 5:  # filings land on trading days
+            records = score_filings(
+                cursor, lookback_days=1, llm_budget=llm_budget_per_day, cascade=cascade
+            )
+            if records:
+                save_catalysts(records)
+                total += len(records)
+            logger.info(f"[catalyst] backfill {cursor}: {len(records)} records ({total} total)")
+        cursor += timedelta(days=1)
+    return total
+
+
 def score_news(
     as_of: date, max_items: int = 120, max_filings: int = 90
 ) -> list[CatalystRecord]:
@@ -158,47 +241,9 @@ def score_news(
         logger.warning("[catalyst] no LLM providers configured — skipping scoring")
         return []
 
-    records: list[CatalystRecord] = []
-
-    # ── BSE filings (primary source) ──────────────────────────────────────────
-    # Routed by subcategory rather than all sent to the LLM: most filings are procedural,
-    # and paying for a model call to be told "Record Date scores zero" is pure waste.
-    try:
-        filings = fetch_filings(as_of, lookback_days=3)
-        routed = {"skip": 0, "event": 0, "sast": 0, "llm": 0}
-        llm_budget = max_filings
-
-        for filing in filings:
-            decision = filing.route
-            routed[decision] += 1
-
-            if decision == "skip":
-                continue
-
-            if decision == "event":
-                records.append(_event_record(filing))
-                continue
-
-            if decision == "sast":
-                records.append(_sast_record(filing))
-                continue
-
-            if llm_budget > 0:
-                llm_budget -= 1
-                records.extend(
-                    _score_one(
-                        cascade, {filing.symbol}, filing.headline, filing.summary,
-                        filing.published, f"BSE {filing.subcategory or filing.category}",
-                        filing.url,
-                    )
-                )
-
-        logger.info(
-            f"[catalyst] filings routed — skip {routed['skip']}, event {routed['event']}, "
-            f"sast {routed['sast']}, llm {routed['llm']}"
-        )
-    except Exception as exc:  # noqa: BLE001 — filings must never break the scan
-        logger.warning(f"[catalyst] filings failed: {exc}")
+    records: list[CatalystRecord] = list(
+        score_filings(as_of, lookback_days=3, llm_budget=max_filings, cascade=cascade)
+    )
 
     # ── News feeds (secondary, adds market interpretation) ────────────────────
     universe = universe_mod.load_universe()
@@ -262,6 +307,95 @@ def delivery_spike_scores(history: pd.DataFrame, symbols: list[str]) -> dict[str
     return out
 
 
+def aggregate_catalysts(group, reference: datetime) -> tuple[float, str]:
+    """Freshness-weighted score and headline note for one symbol's records.
+
+    Extracted so the live scan and the backtest cannot drift apart on what "the catalyst as
+    of this moment" means. ``reference`` is the as-of moment, never wall-clock now —
+    anchoring to now decays every historical catalyst to nothing and silently disables the
+    factor across a whole replay.
+    """
+    weighted, weight_sum, best, best_score = 0.0, 0.0, None, 50.0
+    for row in group.itertuples():
+        published = row.published
+        if isinstance(published, str):
+            published = datetime.fromisoformat(published)
+        if published.tzinfo is None:
+            published = published.replace(tzinfo=timezone.utc)
+        weight = _freshness(published, reference)
+        # Clamped on read as well as on write. `CatalystExtraction.score` gained its clamp
+        # after the fact, and the store still holds rows from before it — JIOFIN at 150 and
+        # GODREJCP at -25, both on 12 Aug 2026. Clamping only on write leaves those rows
+        # dragging every average they appear in, and a stored value cannot be re-derived.
+        score = float(np.clip(row.score, 0.0, 100.0))
+        weighted += (score - 50.0) * weight
+        weight_sum += weight
+        if best is None or abs(score - 50) > abs(best_score - 50):
+            best, best_score = row, score
+    if weight_sum <= 0:
+        return 50.0, ""
+    score = float(np.clip(50 + weighted / weight_sum, 0, 100))
+    note = f"{best.catalyst_type}: {best.rationale}".strip(": ") if best is not None else ""
+    return score, note
+
+
+class CatalystHistory:
+    """Point-in-time catalyst lookup over a whole replay window, loaded once.
+
+    The live scan calls ``catalyst_scores_for`` once per run. A backtest asks the same
+    question at thousands of decision moments, so it reads the store once here and slices
+    in memory — a query per decision would dominate the replay.
+
+    **Coverage is tracked separately from absence**, and that distinction is the whole
+    reason this class exists. The store began on 11 Aug 2026; the intraday replay window
+    reaches back roughly sixty sessions. A decision on 3 July has no catalyst records
+    behind it because none were ever collected, not because the tape was quiet, and
+    scoring that as "no catalyst" would measure the store's start date and call it a
+    market finding. ``covered`` answers "could this date have had a catalyst at all", and
+    uncovered decisions are excluded from the measurement rather than counted against it.
+
+    Coverage is deliberately a property of the *date*, not the symbol: on a day the store
+    knows about, a symbol with no record genuinely had no catalyst, which is exactly the
+    fact the filter acts on.
+    """
+
+    def __init__(self, window_days: int = 5, *, end: date | None = None, span_days: int = 400):
+        from ..storage import load_catalysts
+
+        self.window_days = window_days
+        self._frame = load_catalysts(since_days=span_days, as_of=end or date.today())
+        self._by_symbol: dict[str, pd.DataFrame] = {}
+        self._days: set[date] = set()
+        if self._frame.empty:
+            return
+        published = pd.to_datetime(self._frame["published"])
+        self._frame = self._frame.assign(_day=published.dt.date)
+        self._days = set(self._frame["_day"])
+        for symbol, group in self._frame.groupby("symbol"):
+            self._by_symbol[str(symbol)] = group
+
+    @property
+    def empty(self) -> bool:
+        return not self._days
+
+    def covered(self, as_of: date) -> bool:
+        """Does the store hold *any* record inside this decision's lookback window?"""
+        start = as_of - timedelta(days=self.window_days)
+        return any(start <= day <= as_of for day in self._days)
+
+    def at(self, symbol: str, as_of: date) -> tuple[float, str]:
+        """The catalyst score and note for ``symbol`` as known on ``as_of``."""
+        group = self._by_symbol.get(symbol)
+        if group is None:
+            return 50.0, ""
+        start = as_of - timedelta(days=self.window_days)
+        window = group[(group["_day"] > start) & (group["_day"] <= as_of)]
+        if window.empty:
+            return 50.0, ""
+        reference = datetime.combine(as_of, datetime.max.time()).replace(tzinfo=timezone.utc)
+        return aggregate_catalysts(window, reference)
+
+
 def catalyst_scores_for(
     symbols: list[str], as_of: date, *, refresh: bool = True
 ) -> tuple[dict[str, float], dict[str, str]]:
@@ -291,22 +425,11 @@ def catalyst_scores_for(
         # End of the as-of day, so a catalyst published that morning is still fresh.
         reference = datetime.combine(as_of, datetime.max.time()).replace(tzinfo=timezone.utc)
         for symbol, group in stored.groupby("symbol"):
-            weighted, weight_sum, best = 0.0, 0.0, None
-            for row in group.itertuples():
-                published = row.published
-                if isinstance(published, str):
-                    published = datetime.fromisoformat(published)
-                if published.tzinfo is None:
-                    published = published.replace(tzinfo=timezone.utc)
-                weight = _freshness(published, reference)
-                weighted += (row.score - 50.0) * weight
-                weight_sum += weight
-                if best is None or abs(row.score - 50) > abs(best.score - 50):
-                    best = row
-            if weight_sum > 0:
-                scores[symbol] = float(np.clip(50 + weighted / weight_sum, 0, 100))
-                if best is not None:
-                    notes[symbol] = f"{best.catalyst_type}: {best.rationale}".strip(": ")
+            score, note = aggregate_catalysts(group, reference)
+            if note or score != 50.0:
+                scores[symbol] = score
+                if note:
+                    notes[symbol] = note
 
     # Delivery spikes nudge the score; they never create a catalyst on their own.
     history = load_history(days=60, end=as_of)

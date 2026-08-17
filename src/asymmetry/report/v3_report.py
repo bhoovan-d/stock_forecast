@@ -544,6 +544,104 @@ def _subset(result, predicate):
     return clone
 
 
+def _catalyst_section(result) -> list:
+    """Hard filter 5, measured against the trades it could actually have judged.
+
+    Deliberately loud about sample size. The carry gate had 2,527 triggers behind it; this
+    has whatever fraction of them falls inside the catalyst store's coverage, and a cohort
+    table renders n=12 exactly as authoritatively as n=1,200 unless the text says otherwise.
+    """
+    covered = result.catalyst_covered
+    uncovered = result.catalyst_uncovered
+    total = len(result.trades)
+
+    if not covered.trades:
+        return [
+            Text.from_markup(
+                "\n[bold]The catalyst filter is unmeasured.[/]\n"
+                f"[dim]None of the {total:,} replayed decisions fall inside the catalyst "
+                "store's coverage, so there is no cohort to compare. This is a statement "
+                "about collection, not about catalysts: the store holds only what has been "
+                "fetched, and the intraday replay reaches back further than that. Run "
+                "`asymmetry catalyst-backfill --days 90` and replay again.[/]"
+            )
+        ]
+
+    with_cat = covered._subset(lambda t: t.has_catalyst)
+    without = covered._subset(lambda t: not t.has_catalyst)
+
+    table = Table(title="\nWhat the catalyst filter is worth", header_style="bold",
+                  box=None, padding=(0, 2))
+    table.add_column("Cohort")
+    table.add_column("n", justify="right")
+    table.add_column("Win rate", justify="right")
+    table.add_column("Mean R", justify="right")
+    table.add_column("Net of costs", justify="right")
+
+    def row(name: str, res) -> None:
+        if not res.trades:
+            table.add_row(name, "0", "—", "—", "—")
+            return
+        style = "green" if res.net_expectancy_r > 0 else "red"
+        rate = f"{res.win_rate:.0f}%" if res.win_rate == res.win_rate else "—"
+        table.add_row(name, f"{len(res.trades):,}", rate, f"{res.expectancy_r:+.2f}",
+                      f"[{style}]{res.net_expectancy_r:+.2f}R[/]")
+
+    row("Covered by the store", covered)
+    row("  had a catalyst (filter takes)", with_cat)
+    row("  no catalyst (filter refuses)", without)
+
+    # Per setup as well as blended, and for a sharper reason than symmetry with the carry
+    # table. Catalysts are not evenly spread across setups — on the 18 Aug 2026 run
+    # base-breakout was 12% of the with-catalyst cohort against 2% of the without — so the
+    # blended figure moves with the *mix* and can show the filter helping while it hurts
+    # every setup taken individually. Reading only the blended row is how this filter would
+    # get justified by a composition artefact.
+    for setup in sorted({t.setup for t in covered.trades}):
+        row(f"  {setup} — has catalyst",
+            covered._subset(lambda t, s=setup: t.setup == s and t.has_catalyst))
+        row(f"  {setup} — no catalyst",
+            covered._subset(lambda t, s=setup: t.setup == s and not t.has_catalyst))
+
+    parts: list = [table]
+
+    # The comparison is only worth stating when both sides exist and neither is a handful.
+    # Saying "the filter adds +0.4R" off nine trades is how a backtest invents an edge.
+    verdict = (
+        f"\n[dim]Measured on {len(covered.trades):,} of {total:,} replayed decisions — the "
+        f"rest ({uncovered:,}) predate the catalyst store and are excluded rather than "
+        "counted as having no catalyst.[/]"
+    )
+    if with_cat.trades and without.trades:
+        delta = with_cat.net_expectancy_r - covered.net_expectancy_r
+        thin = min(len(with_cat.trades), len(without.trades)) < 30
+        colour = "yellow" if thin else ("green" if delta > 0 else "red")
+        verdict += (
+            f" [{colour}]Requiring a catalyst moves *blended* net expectancy by "
+            f"{delta:+.2f}R per trade on this sample — read the per-setup rows before "
+            "believing it, because that figure moves with the setup mix.[/]"
+        )
+        if thin:
+            verdict += (
+                f" [yellow]The smaller cohort holds "
+                f"{min(len(with_cat.trades), len(without.trades)):,} trades, which "
+                "establishes nothing — read it as a direction to keep measuring, not a "
+                "result.[/]"
+            )
+    elif not with_cat.trades:
+        verdict += (
+            " [yellow]No covered decision had a catalyst, so the filter would have refused "
+            "every one of them. That is an unmeasurable filter, not a strict one.[/]"
+        )
+    else:
+        verdict += (
+            " [yellow]Every covered decision had a catalyst, so the filter refused nothing "
+            "and there is no comparison to make.[/]"
+        )
+    parts.append(Text.from_markup(verdict))
+    return parts
+
+
 def render_backtest(result) -> Group:
     """Walk-forward result for the V3 engine, measured on real 15m triggers.
 
@@ -666,6 +764,15 @@ def render_backtest(result) -> Group:
                 "back and were failed closed, the same as the live scan does.[/]"
             )
         parts.append(Text.from_markup(verdict_line))
+
+    # ── what the catalyst filter is worth ─────────────────────────────────────
+    #
+    # Reported inside the covered subset only. The catalyst store started on 11 Aug 2026 and
+    # the intraday window reaches back roughly sixty sessions, so most decisions have no
+    # records behind them — not because the tape was quiet but because nothing was
+    # collected. Splitting cohorts on that would measure the collection start date.
+    if hasattr(result, "catalyst_covered"):
+        parts.extend(_catalyst_section(result))
 
     # ── the survivors, one by one ─────────────────────────────────────────────
     #

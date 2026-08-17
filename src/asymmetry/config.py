@@ -38,7 +38,11 @@ class Settings(BaseSettings):
     cerebras_base_url: str = "https://api.cerebras.ai/v1"
 
     groq_api_key: str | None = None
-    groq_model: str = "llama-3.3-70b-versatile"
+    # `llama-3.3-70b-versatile` was decommissioned and 404s on this account — checked
+    # against Groq's /models on 18 Aug 2026, which no longer lists any llama chat model.
+    # A dead link in the chain is not free: the failure costs a full 60s timeout per item
+    # before the cascade moves on, which is most of why a day of filings took 165s.
+    groq_model: str = "openai/gpt-oss-120b"
     groq_base_url: str = "https://api.groq.com/openai/v1"
 
     gemini_api_key: str | None = None

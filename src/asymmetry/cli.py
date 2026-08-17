@@ -350,6 +350,29 @@ def v3(
     console.print(f"[green]Written:[/] {write_v3_html(scan)}")
 
 
+@app.command("catalyst-backfill")
+def catalyst_backfill(
+    days: int = typer.Option(90, help="How many days back to collect."),
+    llm: bool = typer.Option(True, "--llm/--no-llm", help="Score non-procedural filings."),
+    budget: int = typer.Option(40, help="Max LLM calls per day of backfill."),
+) -> None:
+    """Collect historical BSE filings so the catalyst filter can be measured.
+
+    Filings are the only catalyst source with an archive — the news RSS feeds serve about
+    48 hours. A backfilled window is therefore filings-only and understates what the live
+    filter sees, which any measurement built on it must say.
+    """
+    from datetime import timedelta
+
+    from .engines.catalyst import backfill_filings
+
+    end = date.today()
+    start = end - timedelta(days=days)
+    console.print(f"[dim]Collecting filings {start} → {end}…[/]")
+    saved = backfill_filings(start, end, llm=llm, llm_budget_per_day=budget)
+    console.print(f"[green]Saved {saved} catalyst records.[/]")
+
+
 @app.command("v3-backtest")
 def v3_backtest(
     symbols: int = typer.Option(60, help="How many current-setup symbols to replay."),
