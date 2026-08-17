@@ -135,6 +135,15 @@ class V3Scan:
     # Of the technical-validity rejections, how many were the carry gate specifically. The
     # funnel is only useful if it says which rung of the timeframe chain did the cutting.
     carry_rejected: int = 0
+    # Was the fifth hard filter actually armed this run, and what did it cost? The two are
+    # reported separately because "0 rejected" and "never ran" are opposite facts that a
+    # single count renders identically.
+    catalyst_required: bool = False
+    catalyst_rejected: int = 0
+    # "armed" | "outage" | "off". Three states, not two: a filter that was switched off and
+    # a filter whose data source is down produce the same zero, and only one of them is a
+    # deliberate choice the reader should be told about.
+    catalyst_status: str = "off"
     reject_counts: dict[str, int] = field(default_factory=dict)
     tier: str = ""
 
@@ -300,8 +309,14 @@ def run_v3_scan(
     min_score: float = 0.0,
     max_per_day: int = 2,
     setups: tuple[str, ...] | None = None,
+    require_catalyst: bool | None = None,
 ) -> V3Scan:
-    """Full V3 scan across the NIFTY 500."""
+    """Full V3 scan across the NIFTY 500.
+
+    ``require_catalyst`` defaults to ``settings.v3_require_catalyst``. It is meaningless
+    without ``use_catalyst``, and is forced off when the catalyst pass is not running at
+    all — a filter fed no data would reject the entire universe and call it selectivity.
+    """
     from ..storage import load_history
     from .regime import assess_regime
 
@@ -370,6 +385,27 @@ def run_v3_scan(
         except Exception as exc:  # noqa: BLE001 — catalysts must never break the scan
             logger.warning(f"[v3] catalyst pass failed: {exc}")
 
+    # ── Is the catalyst filter allowed to run at all? ─────────────────────────
+    #
+    # Two ways it must not: `use_catalyst=False` is an explicit opt-out, and an empty result
+    # across the whole shortlist means the pass itself is down (no LLM provider configured,
+    # feeds unreachable, an expired key) rather than 135 names genuinely having no news.
+    # Rejecting everything in either case would publish an empty page and dress an outage up
+    # as selectivity — which is precisely the failure mode trap 5 warns about, inverted.
+    if require_catalyst is None:
+        require_catalyst = settings.v3_require_catalyst
+    if not (require_catalyst and use_catalyst):
+        scan.catalyst_status = "off"
+    elif not catalyst_notes:
+        scan.catalyst_status = "outage"
+        logger.warning(
+            "[v3] catalyst filter disarmed for this run: the catalyst pass returned nothing "
+            "for any candidate, which is an outage rather than an absence of news"
+        )
+    else:
+        scan.catalyst_status = "armed"
+    scan.catalyst_required = scan.catalyst_status == "armed"
+
     # Ordered by promise, but *all* candidates are evaluated. Truncating the intraday pass
     # is what caused the engine to miss valid setups: a name can rank mid-pack on leadership
     # and still be the cleanest 4R geometry on the board. Only 15m is fetched here — the
@@ -393,6 +429,22 @@ def run_v3_scan(
         candidate.catalyst_note = catalyst_notes.get(candidate.symbol, "")
 
         scan.evaluated += 1
+
+        # ── Hard filter 5: the "why now" must have an answer (§12) ────────────
+        #
+        # First, because it is free. Every other filter in stage 2 costs a paced network
+        # fetch; this one reads a dict already in memory, so refusing here is refusing
+        # before any money is spent. On 14 Aug 2026 that removed 125 of 135 candidates
+        # before a single 60m bar was requested.
+        if scan.catalyst_required and not candidate.has_catalyst:
+            candidate.rejected_by = "catalyst"
+            candidate.reject_detail = (
+                "no catalyst found in news or filings within 5 sessions — §12 requires an "
+                "answer to \"why now\", and a tidy chart is not one"
+            )
+            scan.reject_counts["catalyst"] = scan.reject_counts.get("catalyst", 0) + 1
+            scan.catalyst_rejected += 1
+            continue
 
         # ── Stage 2a: the carry test, before any 15m data is paid for ─────────
         #
@@ -453,6 +505,16 @@ def run_v3_scan(
         _feasible, volatility_score, _note = move_feasible(
             plan.target_pct, candidate.adr_pct, candidate.atr_pct
         )
+        # Catalyst scores are directional: centred on 50, above is a positive expectation
+        # change and below is a negative one. Every other percentile here is mirrored for a
+        # short and this one was not, so a SHORT with a *bullish* catalyst scored higher for
+        # it — the catalyst module rewarding the news that argues against the trade. Same
+        # family as feeding setup quality in as "structure".
+        directional_catalyst = (
+            candidate.catalyst_score
+            if candidate.direction == "long"
+            else 100 - candidate.catalyst_score
+        )
         directional_rs = (
             candidate.rs_nifty_pct if candidate.direction == "long" else 100 - candidate.rs_nifty_pct
         )
@@ -477,7 +539,7 @@ def run_v3_scan(
             structure_score=_structure_score(candidate),
             setup_quality=candidate.setup.quality,
             entry_quality=entry_quality,
-            catalyst_score=candidate.catalyst_score,
+            catalyst_score=directional_catalyst,
             volatility_score=volatility_score,
             carry_score=candidate.carry.score,
         )
@@ -514,6 +576,7 @@ def run_v3_scan(
 
     logger.info(
         f"[v3] {scan.evaluated} evaluated in {time.time() - started:.0f}s → "
+        f"{scan.catalyst_rejected} had no catalyst, "
         f"{scan.carry_rejected} failed the carry test, "
         f"{scan.cleared_floor} cleared the floor ({threshold:.0f}), "
         f"showing top {len(scan.trades)}, {scan.rejected} failed a hard filter"

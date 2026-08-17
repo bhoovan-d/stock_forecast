@@ -122,12 +122,40 @@ backtest's 730 is not a forecast of output and was never meant to be read as one
 
 ---
 
-## Two things this document does not fix
+## The fifth hard filter (added 18 Aug 2026)
 
-- **A missing catalyst still cannot reject a candidate.** §16 fixes the hard filters at
-  four, and a fifth is not permitted. Absence now scores neutral (50, weight 0.12) and is
-  stated in words on the card — "no catalyst found — price structure only" — where before
-  it silently rendered the setup's own note and read exactly like a real reason. Making
-  "why now" *binding* is a specification change, not a bug fix, and needs a decision before
-  it is made.
-- **Nothing has traded live.** Every number here is measurement or calibration.
+The version of this document written on the 17th said a missing catalyst could not reject,
+because §16 fixed the hard filters at four. The owner then decided it should. It is now a
+genuine fifth filter rather than the carry gate's trick of reporting under *technical
+validity* — that mapping was honest, because a missing 60m carry structure really is a
+technical invalidity, and a missing news catalyst is not.
+
+**What it costs.** On 14 Aug 2026, of 135 stage-one candidates, **10 carried a catalyst
+note**. PIIND — the only name published that day — was not among them and would have been
+refused. Expect materially fewer published setups, which §17 says is the correct direction
+for a change to move things.
+
+**The honest risk.** "No catalyst found" is partly a statement about reach, not about the
+market. The news pass is capped at 120 items and 90 filings, the NSE/BSE announcement APIs
+are blocked from here, and the LLM cascade is the only thing reading the feeds. A filter
+this strict sitting on that much coverage uncertainty is the thing to watch.
+
+Three guards follow from that:
+
+- an **empty catalyst result across the whole shortlist disarms the filter** and says so
+  (`catalyst_status = "outage"`). A broken feed must never publish an empty page that looks
+  identical to a selective day;
+- **off and outage render differently** on all three surfaces, because they are opposite
+  facts;
+- `--no-require-catalyst` turns it off for a run, and the page states how many filters were
+  armed rather than hard-coding a count.
+
+**It is unmeasured.** `v3_backtest` calls `detect_setup` / `build_v3_plan` directly, so it
+does not run this filter. Every expectancy figure in `CLAUDE.md` predates it and none of
+them says anything about whether requiring a catalyst helps or hurts. That is the next
+thing worth measuring, and it is measurable: the catalyst store is bounded by `as_of`, so a
+replay can ask the same question point-in-time.
+
+## One thing this document still does not fix
+
+**Nothing has traded live.** Every number here is measurement or calibration.

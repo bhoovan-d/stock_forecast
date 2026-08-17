@@ -125,6 +125,25 @@ class Settings(BaseSettings):
     # the 4R or stop requirements.
     target_setups_per_month: int = 15
 
+    # ── The fifth hard filter: a catalyst must exist (added 18 Aug 2026) ───────
+    # V3 §16 fixed the hard filters at four, and this codebase enforced that: the carry gate
+    # reports under *technical validity* precisely so it would not become a fifth. That
+    # mapping was honest — a missing 60m carry structure genuinely is a technical
+    # invalidity. A missing catalyst is not, and filing it under technical validity to
+    # preserve the count would be a lie about why a name was refused.
+    #
+    # So this is a real fifth filter, added on the owner's explicit instruction. §12 asks
+    # every published setup to answer "why now", and until now a name with no answer was
+    # merely scored down (catalyst weight 0.12, neutral 50) and published anyway.
+    #
+    # What it costs, measured on 14 Aug 2026: of 135 stage-one candidates, 10 carried a
+    # catalyst note. PIIND — the one name actually published that day — was not among them
+    # and would have been refused. Read that as a coverage statement as much as a market
+    # one: the news pass is capped at 120 items and 90 filings and the BSE/NSE announcement
+    # APIs are blocked here, so "no catalyst found" partly means "not found by what we can
+    # reach". That is the honest risk in this filter and the reason it is a switch.
+    v3_require_catalyst: bool = True
+
     # ── Master scoring weights (Engineer Brief §17) ───────────────────────────
     # Engineering defaults, explicitly *not* claimed optimal. The brief is emphatic that
     # these may only be changed by walk-forward testing, and never tuned on the final test

@@ -177,6 +177,10 @@ COMMANDS: tuple[Command, ...] = (
                   help="0 = evaluate every candidate (recommended)."),
             Field("refresh", "Re-score news and filings via LLM", "toggle", default=False,
                   flag="--refresh", off_flag="--no-refresh"),
+            Field("require_catalyst", "Require a catalyst", "toggle", default=True,
+                  flag="--require-catalyst", off_flag="--no-require-catalyst",
+                  help=("Hard filter 5. On 14 Aug 2026 it kept 10 of 135 candidates. "
+                        "Turn off to see what it is refusing.")),
         ),
         outputs=("briefs",),
     ),

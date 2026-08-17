@@ -6,11 +6,14 @@ The hierarchy V3 insists on:
 
 Two design points carry most of the weight:
 
-**Hard filters are exactly four** (§16): 4R, stop distance 0.5–1.5%, liquidity, basic
-technical validity. Nothing else may reject a candidate. Sector leadership, relative
-strength and catalyst are *scoring* factors — which is deliberate, and is why a strong
-setup in a merely-average sector can still qualify. An earlier build treated leadership as a
-filter, and it discarded exactly the candidates the spec exists to find.
+**Hard filters are five.** Four live in this module (§16): 4R, stop distance 0.5–1.5%,
+liquidity, basic technical validity. The fifth — a catalyst must exist (§12) — was added on
+18 Aug 2026 and lives in `v3_scan`, because it is decided from the catalyst pass rather
+than from a plan's geometry and rejecting there costs no network fetch. Nothing else may
+reject a candidate. Sector leadership and relative strength remain *scoring* factors, which
+is deliberate: it is why a strong setup in a merely-average sector can still qualify, and an
+earlier build that gated on leadership discarded exactly the candidates the spec exists to
+find.
 
 **Selectivity comes from the filters, not from truncation** (§17): the engine screens the
 whole NIFTY 500 and lets the hard filters do the cutting, targeting ~10–15 setups a month.
@@ -271,7 +274,10 @@ class V3Plan:
 
 
 class V3Reject(Exception):
-    """One of the four hard filters refused the setup."""
+    """One of this module's four geometry hard filters refused the setup.
+
+    The fifth (catalyst) is raised in `v3_scan` rather than here — it needs no plan.
+    """
 
     def __init__(self, filter_name: str, detail: str):
         self.filter_name = filter_name

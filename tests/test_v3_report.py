@@ -174,6 +174,27 @@ def test_quality_floor_says_where_it_came_from():
         assert "aggressive regime" in surface
 
 
+def test_surfaces_say_how_many_hard_filters_were_armed():
+    """The count is not a constant any more, so no surface may hard-code it — and "off" and
+    "the feed is down" must never render as the same sentence."""
+    armed = _scan(_candidate())
+    armed.catalyst_status, armed.catalyst_required = "armed", True
+    for surface in _surfaces(armed):
+        assert "Five hard filters" in surface
+
+    off = _scan(_candidate())
+    off.catalyst_status, off.catalyst_required = "off", False
+    for surface in _surfaces(off):
+        assert "Four hard filters" in surface
+        assert "outage" not in surface
+
+    outage = _scan(_candidate())
+    outage.catalyst_status, outage.catalyst_required = "outage", False
+    for surface in _surfaces(outage):
+        assert "Four hard filters" in surface
+        assert "outage rather than an absence of news" in surface
+
+
 def test_valid_fill_band_explains_its_own_asymmetry():
     """The band is solved backwards from the fixed stop, so the entry is not in its middle.
     Without saying so, the skew reads as an error rather than as the rule working."""

@@ -326,6 +326,10 @@ def v3(
         None, "--setup",
         help="Restrict to setup types, e.g. --setup reclaim. Repeatable.",
     ),
+    require_catalyst: bool = typer.Option(
+        None, "--require-catalyst/--no-require-catalyst",
+        help="Refuse setups with no catalyst (hard filter 5). Default from settings.",
+    ),
 ) -> None:
     """Specification V3 scan: NIFTY 500, long + short, 4R, 0.5-1.5% stop."""
     from .engines.v3_scan import run_v3_scan
@@ -336,6 +340,7 @@ def v3(
     scan = run_v3_scan(
         target, max_intraday=limit, refresh_catalysts=refresh, min_score=min_score,
         max_per_day=per_day, setups=tuple(setup) if setup else None,
+        require_catalyst=require_catalyst,
     )
     console.print(render_v3(scan))
     # Both artefacts, every run. `site` only copies the HTML it finds in the brief

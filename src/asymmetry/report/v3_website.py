@@ -23,7 +23,7 @@ from datetime import datetime
 from ..config import BRIEF_DIR, settings
 from ..engines.v3_scan import V3Candidate, V3Scan
 from .theme import TOKENS
-from .v3_report import carry_lines, execution_lines
+from .v3_report import carry_lines, execution_lines, hard_filter_note
 
 _CSS = TOKENS + """
 .wrap{max-width:1060px;margin:0 auto;padding:0 24px 88px}
@@ -145,7 +145,15 @@ def _funnel(scan: V3Scan) -> str:
     stages = [
         ("NIFTY 500 liquid", scan.liquid, False),
         ("Showing a V3 setup", scan.with_setup, False),
-        ("Proved a 60m/120m carry setup", scan.evaluated - scan.carry_rejected, False),
+    ]
+    if scan.catalyst_required:
+        stages.append(("Has a catalyst", scan.evaluated - scan.catalyst_rejected, False))
+    stages += [
+        (
+            "Proved a 60m/120m carry setup",
+            scan.evaluated - scan.catalyst_rejected - scan.carry_rejected,
+            False,
+        ),
         ("Cleared the quality floor", scan.cleared_floor, False),
         ("Shown today", len(scan.trades), True),
     ]
@@ -254,8 +262,6 @@ def build_v3_html(scan: V3Scan) -> str:
         )
         rejects = (
             "<section><h2>Which filter was binding</h2>"
-            "<p class='lede'>The hard filters are the only things that may reject: 4R "
-            "feasibility, stop distance, liquidity and technical validity.</p>"
             f"<div class='scroller'><table><thead><tr><th>Hard filter</th>"
             f"<th style='text-align:right'>n</th></tr></thead><tbody>{rows}</tbody>"
             "</table></div></section>"
@@ -302,6 +308,7 @@ def build_v3_html(scan: V3Scan) -> str:
       {settings.target_setups_per_month} setups a month, so the funnel is meant to be brutal.</p>
     {_funnel(scan)}
     {_floor_note(scan)}
+    <p class="lede">{_esc(hard_filter_note(scan))}</p>
   </section>
 
   <section>

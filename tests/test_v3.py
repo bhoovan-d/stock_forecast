@@ -1,7 +1,8 @@
 """Specification V3: setups, hard filters, both directions.
 
 The rules most likely to erode under future edits are the ones defended hardest here: the
-stop *band* (V3 adds a floor, not just a ceiling), the four-and-only-four hard filters, and
+stop *band* (V3 adds a floor, not just a ceiling), this module's four geometry filters (the
+fifth, catalyst, is raised in `v3_scan` and is covered by `test_catalyst_filter.py`), and
 the fact that sector leadership scores rather than gates — that last one is precisely the
 mistake that made an earlier engine discard the setups the spec exists to find.
 """

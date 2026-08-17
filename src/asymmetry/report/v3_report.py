@@ -114,6 +114,29 @@ def carry_lines(candidate: V3Candidate) -> list[tuple[str, str]]:
     return rows
 
 
+def hard_filter_note(scan: V3Scan) -> str:
+    """Which filters were armed on this run — shared by all three surfaces.
+
+    The count is not fixed any more, so no surface may hard-code it. "0 rejected on
+    catalyst" and "the catalyst filter never ran" are opposite facts, and a page that
+    renders them identically is claiming a check it did not perform.
+    """
+    base = "4R feasibility, stop distance, liquidity and technical validity"
+    if scan.catalyst_required:
+        return (
+            f"Five hard filters may reject: {base}, and a catalyst — §12 requires an answer "
+            "to \"why now\", and a name without one is refused rather than scored down."
+        )
+    if scan.catalyst_status == "outage":
+        return (
+            f"Four hard filters may reject: {base}. The catalyst filter is armed in settings "
+            "but did not run: the catalyst pass returned nothing for any candidate, which is "
+            "an outage rather than an absence of news, and refusing the whole universe on "
+            "missing data would dress a broken feed up as selectivity."
+        )
+    return f"Four hard filters may reject: {base}."
+
+
 def _bar_span(start) -> str:
     """Describe the interval a trigger bar covers, without inventing one.
 
@@ -261,10 +284,17 @@ def render_v3(scan: V3Scan) -> Group:
     funnel.add_row("NIFTY 500 liquid", str(scan.liquid))
     funnel.add_row("showing a V3 setup", str(scan.with_setup))
     funnel.add_row("intraday-evaluated", str(scan.evaluated))
-    funnel.add_row("proved a 60m/120m carry setup", str(scan.evaluated - scan.carry_rejected))
+    if scan.catalyst_required:
+        funnel.add_row("has a catalyst", str(scan.evaluated - scan.catalyst_rejected))
+    funnel.add_row(
+        "proved a 60m/120m carry setup",
+        str(scan.evaluated - scan.catalyst_rejected - scan.carry_rejected),
+    )
     funnel.add_row("cleared the quality floor", str(scan.cleared_floor))
     funnel.add_row("[bold]shown today[/]", f"[bold]{len(scan.trades)}[/]")
     parts.append(funnel)
+
+    parts.append(Text.from_markup(f"\n[dim]{hard_filter_note(scan)}[/]"))
 
     if scan.reject_counts:
         rejects = Table(title="\nWhich filter was binding", box=None, header_style="bold",
@@ -398,14 +428,25 @@ def build_v3_markdown(scan: V3Scan) -> str:
         f"| NIFTY 500 liquid | {scan.liquid} |",
         f"| Showing a V3 setup | {scan.with_setup} |",
         f"| Intraday-evaluated | {scan.evaluated} |",
-        f"| Proved a 60m/120m carry setup | {scan.evaluated - scan.carry_rejected} |",
+    ]
+    if scan.catalyst_required:
+        lines.append(f"| Has a catalyst | {scan.evaluated - scan.catalyst_rejected} |")
+    lines += [
+        f"| Proved a 60m/120m carry setup | "
+        f"{scan.evaluated - scan.catalyst_rejected - scan.carry_rejected} |",
         f"| Cleared the quality floor | {scan.cleared_floor} |",
         f"| **Shown today** | **{len(scan.trades)}** |",
         "",
     ]
 
+    # Unconditional: which filters were armed is a fact about the run, not about whether
+    # any of them happened to bite. A day with no rejections still made these checks.
+    lines += [hard_filter_note(scan), ""]
+
     if scan.reject_counts:
-        lines += ["### Which filter was binding", "", "| Hard filter | n |", "| --- | --: |"]
+        lines += [
+            "### Which filter was binding", "", "| Hard filter | n |", "| --- | --: |",
+        ]
         for name, count in sorted(scan.reject_counts.items(), key=lambda kv: -kv[1]):
             lines.append(f"| {name} | {count} |")
         lines.append("")

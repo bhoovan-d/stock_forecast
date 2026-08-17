@@ -39,10 +39,26 @@ sharing one constant would silently retune the deployed daily brief.
 
 ## Rules that are not negotiable
 
-**Hard filters are exactly four** (V3 §16): 4R feasibility, stop distance, liquidity, basic
-technical validity. Nothing else may reject. When the carry gate rejects, it reports under
-*technical validity* — a setup with no higher-timeframe carry structure is not technically
-valid for a 1–5 session hold. Do not add a fifth filter; extend one of the four and say so.
+**Hard filters are five** (V3 §16 said four; the fifth was added 18 Aug 2026 on the owner's
+explicit instruction): 4R feasibility, stop distance, liquidity, basic technical validity,
+and **a catalyst must exist**. Nothing else may reject, and a sixth needs the same explicit
+decision — not a judgement call mid-edit.
+
+When the carry gate rejects, it still reports under *technical validity* — a setup with no
+higher-timeframe carry structure is not technically valid for a 1–5 session hold. The
+catalyst filter is deliberately **not** folded in the same way: a missing news catalyst is
+not a technical invalidity, and filing it there to keep the count at four would misstate
+why a name was refused.
+
+What the catalyst filter costs, so it is judged on the real number: on 14 Aug 2026, 10 of
+135 stage-one candidates carried a catalyst note, and PIIND — the only name published that
+day — was not one of them. Read that as much as a coverage statement as a market one; the
+news pass is capped at 120 items and 90 filings and the announcement APIs are blocked here.
+**An empty catalyst result across the whole shortlist disarms the filter** (`catalyst_status`
+= `outage`) rather than refusing the universe: a broken feed must never render as a
+selective day. `--no-require-catalyst` turns it off deliberately, which is reported
+differently again. **The backtest does not include this filter** — `v3_backtest` calls
+`detect_setup` / `build_v3_plan` directly, so every measured number predates it.
 
 **A stop is never moved to make a trade fit.** Not widened to admit a candidate, not
 tightened to manufacture the R multiple. If the valid invalidation sits outside the
@@ -186,7 +202,11 @@ Each of these shipped or nearly shipped. They are cheap to reintroduce.
     with a real earnings catalyst and a name with only a tidy chart rendered identically.
     A fallback that cannot be distinguished from the real answer is a false claim — say
     "no catalyst found" out loud. Same family as trap 5.
-11. **Publishing a threshold without its derivation.** Every watch-list row read "below 72"
+11. **Scoring a directional factor undirectionally.** Catalyst scores are centred on 50,
+    above bullish and below bearish. Every other percentile in the scan is mirrored for a
+    short and this one was not, so a SHORT with a *bullish* catalyst scored higher for it.
+    Anything fed to `quality_score` must be expressed in the traded direction first.
+12. **Publishing a threshold without its derivation.** Every watch-list row read "below 72"
     while 72 existed only in a code comment. If a number decides what the reader sees, it
     ships with where it came from — `V3Scan.threshold_basis` / `regime_detail` carry this.
 
