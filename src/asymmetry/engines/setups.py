@@ -334,6 +334,37 @@ def detect_base_breakout(
     )
 
 
+# ── How a setup is named to a reader ──────────────────────────────────────────
+
+
+# `SetupType` values are the engine's identifiers: they key the carry exemption
+# (`v3_carry_gated_setups`), the `--setup` CLI filter and every backtest cohort, so they are
+# direction-neutral and must stay that way. What a *reader* needs is the mechanic, and the
+# mechanic is mirrored, not shared: a short "reclaim" is price sweeping a prior high and
+# being rejected back below it — a failed breakout. PIIND published on 14 Aug 2026 tagged
+# "reclaim" on a SHORT, with its own note underneath correctly reading "rejected by 10.2%".
+# The trade was right and the label contradicted it, which is the cheapest possible way to
+# lose a reader's trust in the rest of the card.
+_DIRECTIONAL_LABELS: dict[SetupType, tuple[str, str]] = {
+    #                     long                short
+    SetupType.RECLAIM: ("reclaim", "failed breakout"),
+    SetupType.BASE_BREAKOUT: ("base breakout", "base breakdown"),
+}
+
+
+def setup_label(kind: SetupType, direction: str) -> str:
+    """The reader-facing name of a setup, in the direction it is actually being traded.
+
+    Display only — never parse this back, and never gate on it. `CONTINUATION` is absent
+    from the table on purpose: a flag reads the same either way, so inventing a second name
+    for it would add a word without adding meaning.
+    """
+    labels = _DIRECTIONAL_LABELS.get(kind)
+    if labels is None:
+        return kind.value
+    return labels[0] if direction == "long" else labels[1]
+
+
 def detect_setup(frame: pd.DataFrame, direction: str = "long") -> SetupSignal:
     """Best of the permitted setups, or an explicit none.
 

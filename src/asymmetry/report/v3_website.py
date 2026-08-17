@@ -32,6 +32,9 @@ _CSS = TOKENS + """
 .brand h1{margin:0 0 6px;font-size:30px;font-weight:680;letter-spacing:-.025em}
 .brand .sub{color:var(--muted);font-size:13.5px}
 .chips{display:flex;gap:8px;flex-wrap:wrap}
+/* Third flex child of the masthead, forced onto its own line: the regime chip states a
+   score, and this is the working behind it. Beside the chips it would read as a fourth. */
+.regime-detail{flex-basis:100%;color:var(--muted);font-size:12.5px;font-family:var(--mono)}
 .chip{font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;
   padding:5px 10px;border:1px solid var(--line-strong);border-radius:3px;color:var(--text-dim);
   background:var(--surface);white-space:nowrap}
@@ -159,6 +162,21 @@ def _funnel(scan: V3Scan) -> str:
     return f'<div class="funnel">{rows}</div>'
 
 
+def _floor_note(scan: V3Scan) -> str:
+    """The quality floor and where it came from, on the page that quotes it.
+
+    Every watch-list row reads "score 69.8 below 72" — a cutoff the reader was asked to
+    accept with no statement anywhere of what set it. The derivation lived only in a code
+    comment, which is the same as nowhere for the person reading the site.
+    """
+    if not scan.threshold:
+        return ""
+    return (
+        f'<p class="lede">Quality floor <b>{scan.threshold:.0f}/100</b> — '
+        f"{_esc(scan.threshold_basis)}.</p>"
+    )
+
+
 def _card(candidate: V3Candidate) -> str:
     plan = candidate.plan
     if plan is None:
@@ -179,7 +197,7 @@ def _card(candidate: V3Candidate) -> str:
   <div class="head">
     <span class="tkr">{_esc(candidate.symbol)}</span>
     <span class="dir {candidate.direction}">{candidate.direction.upper()}</span>
-    <span class="setup-tag">{_esc(candidate.setup.kind.value)}</span>
+    <span class="setup-tag">{_esc(candidate.setup_name)}</span>
     <span class="co">{_esc(candidate.company)}</span>
     <span class="score">{candidate.score:.1f}</span>
   </div>
@@ -271,7 +289,11 @@ def build_v3_html(scan: V3Scan) -> str:
       <span class="chip">4R minimum</span>
       <span class="chip">stop {settings.min_stop_pct:.1f}–{settings.v3_max_stop_pct:.1f}%</span>
       <span class="chip">{_esc(scan.tier)}</span>
-    </div>
+    </div>""" + (
+        f'\n    <div class="regime-detail">Regime inputs: {_esc(scan.regime_detail)}</div>'
+        if scan.regime_detail
+        else ""
+    ) + f"""
   </header>
 
   <section>
@@ -279,6 +301,7 @@ def build_v3_html(scan: V3Scan) -> str:
     <p class="lede">The rejections are the product. V3 targets roughly
       {settings.target_setups_per_month} setups a month, so the funnel is meant to be brutal.</p>
     {_funnel(scan)}
+    {_floor_note(scan)}
   </section>
 
   <section>

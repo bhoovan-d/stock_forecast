@@ -28,6 +28,21 @@ Method, and the choices that keep it honest:
 The honest limitation, stated in the output: the upstream feed serves roughly 60–80 days of
 15-minute history, so the sample is small and the buckets are thin. This measures the right
 thing on limited data, rather than the wrong thing on plenty.
+
+**The sample is chosen with hindsight, and the numbers must be read knowing it.** With no
+explicit ``symbols``, ``run_v3_backtest`` runs ``stage_one`` for *today* and takes the top
+``max_symbols`` by setup quality — so a name is in the sample because it shows a good setup
+on the run date, and its triggers from fifty sessions earlier are then replayed. The trade
+decisions stay strictly point-in-time; the *universe* does not. Two consequences that no
+amount of care inside the loop can remove:
+
+* it is the best-looking end of the distribution, not a random 80 of 473, so the measured
+  expectancy is an upper bound on what the full universe would give;
+* names that stopped showing setups — including any that were destroyed in the window — are
+  absent by construction.
+
+Pass ``symbols`` explicitly with a list fixed *before* the window to measure without this.
+See ``docs/2026-08-17-published-numbers.md``.
 """
 
 from __future__ import annotations

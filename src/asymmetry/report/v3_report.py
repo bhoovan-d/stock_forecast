@@ -82,7 +82,7 @@ def carry_lines(candidate: V3Candidate) -> list[tuple[str, str]]:
         rows.append((
             "Carry",
             f"{carry.score:.0f}/100 — measured but not gating for "
-            f"{candidate.setup.kind.value}: the gate is a continuation-regime test, and it "
+            f"{candidate.setup_name}: the gate is a continuation-regime test, and it "
             "cut this setup's measured edge rather than protecting it"
             + (f". Would have failed on: {carry.failed}" if carry.failed else ""),
         ))
@@ -161,17 +161,22 @@ def execution_lines(candidate: V3Candidate) -> list[tuple[str, str]]:
         rows.append((
             "Entry",
             f"{'Buy' if long_side else 'Sell'} at market or limit near {plan.entry:,.2f} — "
-            f"the {candidate.setup.kind.value} confirmed on the trigger bar, so that bar's "
+            f"the {candidate.setup_name} confirmed on the trigger bar, so that bar's "
             "close is the entry. There is no further level to wait for.",
         ))
 
     # ── when the quoted plan stops being this trade ───────────────────────────
+    # Why the band is lopsided, said outright. It is not a tolerance drawn around the entry
+    # — it is solved backwards from the stop, which is why the entry does not sit in its
+    # middle. Readers reasonably assumed a symmetric window and read the skew as a bug.
     rows.append((
         "Valid fill",
-        f"{plan.entry_min:,.2f} – {plan.entry_max:,.2f}. The stop is a fixed structural "
-        f"level, so a fill outside this band puts it beyond V3's "
-        f"{settings.min_stop_pct:.1f}–{settings.v3_max_stop_pct:.1f}% rule — a different "
-        "trade, not a worse one.",
+        f"{plan.entry_min:,.2f} – {plan.entry_max:,.2f}. This is not a tolerance around "
+        f"{plan.entry:,.2f}: the stop at {plan.stop:,.2f} is a fixed structural level, and "
+        f"the band is every fill that leaves it inside V3's "
+        f"{settings.min_stop_pct:.1f}–{settings.v3_max_stop_pct:.1f}% rule — which is why "
+        "it is not centred on the entry. A fill outside it is a different trade, not a "
+        "worse one.",
     ))
 
     # ── the bar the geometry was measured on ──────────────────────────────────
@@ -241,6 +246,12 @@ def render_v3(scan: V3Scan) -> Group:
             f"[dim]NIFTY 500 · long + short · 4R minimum · stop "
             f"{settings.min_stop_pct:.1f}–{settings.v3_max_stop_pct:.1f}% · 1–5 sessions[/]\n"
             f"[dim]{scan.regime_note} · data: {scan.tier}[/]\n"
+            + (f"[dim]Regime inputs: {scan.regime_detail}[/]\n" if scan.regime_detail else "")
+            + (
+                f"[dim]Quality floor {scan.threshold:.0f}/100 — {scan.threshold_basis}[/]\n"
+                if scan.threshold
+                else ""
+            )
         )
     ]
 
@@ -283,7 +294,7 @@ def render_v3(scan: V3Scan) -> Group:
             table.add_row(
                 f"[bold]{candidate.symbol}[/]",
                 f"[{style}]{candidate.direction.upper()}[/]",
-                candidate.setup.kind.value,
+                candidate.setup_name,
                 f"{candidate.score:.1f}",
                 f"{plan.entry:,.2f}",
                 f"{plan.stop:,.2f}",
@@ -368,6 +379,12 @@ def build_v3_markdown(scan: V3Scan) -> str:
         "",
         f"*{scan.regime_note} · data: {scan.tier}*",
         "",
+    ]
+    if scan.regime_detail:
+        lines += [f"*Regime inputs: {scan.regime_detail}*", ""]
+    if scan.threshold:
+        lines += [f"*Quality floor {scan.threshold:.0f}/100 — {scan.threshold_basis}*", ""]
+    lines += [
         "> Decision support only. Every row is a setup for your own judgement, never an "
         "instruction to buy or sell. The system places no orders.",
         "",
@@ -417,7 +434,7 @@ def build_v3_markdown(scan: V3Scan) -> str:
             plan = candidate.plan
             lines.append(
                 f"| {i} | **{candidate.symbol}** | {candidate.direction.upper()} | "
-                f"{candidate.setup.kind.value} | {candidate.score:.1f} | {plan.entry:,.2f} | "
+                f"{candidate.setup_name} | {candidate.score:.1f} | {plan.entry:,.2f} | "
                 f"{plan.stop:,.2f} | {plan.stop_pct:.2f}% | {plan.target:,.2f} | "
                 f"{plan.target_pct:+.1f}% | {plan.quantity} |"
             )
@@ -438,7 +455,7 @@ def build_v3_markdown(scan: V3Scan) -> str:
                 f"- **Why now:** {candidate.why_now}",
                 f"- **Why it can move:** ADR {candidate.adr_pct:.1f}%, ATR "
                 f"{candidate.atr_pct:.1f}%, target needs {plan.target_pct:.1f}%",
-                f"- **Setup:** {candidate.setup.kind.value} — {candidate.setup.note}",
+                f"- **Setup:** {candidate.setup_name} — {candidate.setup.note}",
                 f"- **Structure:** Weekly {candidate.weekly_note} → Daily "
                 f"{candidate.daily_note}"
                 + (f" → 60m {candidate.hourly_note}" if candidate.hourly_note else ""),

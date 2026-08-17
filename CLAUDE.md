@@ -88,9 +88,21 @@ Read honestly, and keep reading it honestly in any doc you write:
 - **The flag loses money even after gating.** It stays in the codebase because the failure
   may be the implementation rather than the pattern; it must not reach the site.
 - **One market period.** Intraday history is capped at ~60–80 days upstream.
+- **The 80 symbols are chosen with hindsight.** With no explicit list, `run_v3_backtest`
+  ranks *today's* `stage_one` output by setup quality and takes the top N, then replays
+  their triggers from up to fifty sessions earlier. Trade decisions stay point-in-time; the
+  universe does not. So **+0.11R is an upper bound**, and names that stopped qualifying are
+  absent entirely. The gate-on/gate-off comparison survives this — same 80 names both sides
+  — but the absolute expectancy does not transfer to a 473-name scan. Settle it by passing
+  `symbols` fixed from a snapshot taken before the window; the parameter already exists.
 - **Nothing has traded live.**
 
-Full analysis: `docs/2026-08-16-carry-gate-measurement.md`.
+Do not read the backtest's trade count as an output forecast. It counts every trigger with
+the quality floor and the daily cap switched off, because a gate cannot be measured against
+trades it never saw. 43 candidates → 1 published on 14 Aug is the live pipeline.
+
+Full analysis: `docs/2026-08-16-carry-gate-measurement.md`. Where the floor, the regime
+scale and the fill band come from: `docs/2026-08-17-published-numbers.md`.
 
 ---
 
@@ -165,6 +177,18 @@ Each of these shipped or nearly shipped. They are cheap to reintroduce.
    final bar has *begun* (15:15), not when the closing print lands.
 8. **Windows + Rich in a subprocess.** The UI runner must force
    `force_terminal=True, legacy_windows=False`, or tables degrade to `+---+` ASCII.
+9. **Naming a setup by its enum value.** `SetupType` values are direction-neutral because
+   they key the carry exemption, `--setup` and every backtest cohort. Rendered raw they say
+   the opposite of the trade: PIIND shipped tagged `reclaim` on a SHORT with its own note
+   reading "rejected by 10.2%". Render via `setup_label(kind, direction)`; never parse it
+   back, never gate on it.
+10. **A fallback with no marker.** `why_now` fell through to the setup's own note, so a name
+    with a real earnings catalyst and a name with only a tidy chart rendered identically.
+    A fallback that cannot be distinguished from the real answer is a false claim — say
+    "no catalyst found" out loud. Same family as trap 5.
+11. **Publishing a threshold without its derivation.** Every watch-list row read "below 72"
+    while 72 existed only in a code comment. If a number decides what the reader sees, it
+    ships with where it came from — `V3Scan.threshold_basis` / `regime_detail` carry this.
 
 ---
 

@@ -78,8 +78,38 @@ class V3Candidate:
     reject_detail: str = ""
 
     @property
+    def setup_name(self) -> str:
+        """Reader-facing setup name, in the traded direction. Never gate on this."""
+        from .setups import setup_label
+
+        return setup_label(self.setup.kind, self.direction)
+
+    @property
+    def has_catalyst(self) -> bool:
+        """Did the catalyst engine find an actual reason, as opposed to scoring neutral?
+
+        `catalyst_score` is centred on 50 by construction, so "no catalyst" and "a catalyst
+        that nets out to nothing" share a number. The *note* is the only thing that
+        distinguishes them, which is why absence is tested on the note rather than the score.
+        """
+        return bool(self.catalyst_note)
+
+    @property
     def why_now(self) -> str:
-        return self.catalyst_note or self.setup.note or "technical setup only"
+        """The §12 "why now" answer, including when there isn't one.
+
+        This used to fall through to the setup's own note unannounced, so a name with a real
+        earnings catalyst and a name with nothing but a tidy chart rendered identically —
+        the reader could not tell which they were looking at. V3 cannot *reject* on a
+        missing catalyst (§16 fixes the hard filters at four), so the honest alternative is
+        to say the answer is missing. It still costs the candidate score: catalyst carries
+        0.12 of the quality weight and sits at a neutral 50 when nothing is found.
+        """
+        if self.catalyst_note:
+            return self.catalyst_note
+        if self.setup.note:
+            return f"no catalyst found — price structure only: {self.setup.note}"
+        return "no catalyst found, and the setup offered no note to fall back on"
 
 
 @dataclass
@@ -87,6 +117,13 @@ class V3Scan:
     as_of: str
     regime: str = ""
     regime_note: str = ""
+    # The five -1/0/+1 inputs behind `regime_note`, rendered. A verdict shown as "score +2"
+    # with no scale and no components is a number the reader is asked to take on faith.
+    regime_detail: str = ""
+    # The quality floor this scan actually used, and where it came from. Published pages
+    # quoted "below 72" with nothing on any surface saying what 72 was or who set it.
+    threshold: float = 0.0
+    threshold_basis: str = ""
     universe: int = 0
     liquid: int = 0
     with_setup: int = 0
@@ -291,7 +328,15 @@ def run_v3_scan(
 
     regime = assess_regime(as_of, data)
     scan.regime = regime.verdict.value
-    scan.regime_note = f"{regime.verdict.headline} (score {regime.total:+d})"
+    # The scale travels with the number. Five inputs, each -1/0/+1, so the range is -5..+5
+    # and the verdict boundaries are ±2 — none of which was recoverable from "(score +2)".
+    scan.regime_note = (
+        f"{regime.verdict.headline} (score {regime.total:+d} of −5…+5; "
+        "≥+2 aggressive, ≤−2 defensive, otherwise selective)"
+    )
+    scan.regime_detail = " · ".join(
+        f"{component.name} {component.score:+d}" for component in regime.components
+    )
     # V3 §3: regime changes the quality threshold, it does not generate trades.
     #
     # These floors are set from the observed score distribution, not by taste. On a live
@@ -299,8 +344,18 @@ def run_v3_scan(
     # 50s admitted 180 names — against a specification asking for 10–15 a *month*. §17 is
     # explicit that the response to too many qualifiers is a higher threshold, never a
     # larger output.
-    threshold = min_score or {"aggressive": 72.0, "selective": 76.0, "defensive": 80.0}.get(
-        regime.verdict.value, 76.0
+    floors = {"aggressive": 72.0, "selective": 76.0, "defensive": 80.0}
+    threshold = min_score or floors.get(regime.verdict.value, 76.0)
+    scan.threshold = threshold
+    scan.threshold_basis = (
+        f"set by hand via --min-score {min_score:.0f}"
+        if min_score
+        else (
+            f"{regime.verdict.value} regime (aggressive {floors['aggressive']:.0f} · "
+            f"selective {floors['selective']:.0f} · defensive {floors['defensive']:.0f}); "
+            "calibrated against a live scan of 269 candidates whose scores ran 55–81, "
+            "median 65"
+        )
     )
 
     catalyst_scores: dict[str, float] = {}
