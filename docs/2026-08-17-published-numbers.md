@@ -137,8 +137,10 @@ refused.
 **It was then measured, and it defaults to off.** Later the same day the replay was
 extended to cover it, and the result does not support arming it: per setup it removes edge
 from the two that have any, and the blended figures that appear to support it are setup
-mix. The filter is kept and switchable (`--require-catalyst`) rather than deleted, because
-what was measured is the weak, filings-only definition. Full analysis:
+mix. It was then measured a second time against LLM-judged catalysts rather than
+filings-occurred ones, with the same verdict. The filter is kept and switchable
+(`--require-catalyst`) rather than deleted, because the code is correct and because news —
+the live filter's second source — cannot be backfilled and so stays untested. Full analysis:
 `2026-08-18-catalyst-filter-measurement.md`. **The rest of this section describes the
 machinery, which is unchanged and still runs when the filter is armed.**
 

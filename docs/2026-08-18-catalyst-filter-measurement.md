@@ -29,38 +29,50 @@ Two pieces closed that gap:
 Backfilled coverage: **48 days, 2 Jun → 14 Aug, 387 symbols.** After that, 2,438 of 2,545
 replayed decisions fell inside coverage and 107 were excluded.
 
-## The catalyst being measured is weaker than the one the spec means
+## What counts as a catalyst here
 
-The backfill ran **rule-routed only** (`--no-llm`), so "has a catalyst" here means **a
-material filing occurred** — results, board meeting, dividend, a SAST threshold disclosure
-— within five sessions. It does *not* mean a model judged an expectation change.
+Measured twice, on two definitions, because the weak one was all that existed at first.
 
-That matters in both directions. A results filing is scored a deliberate neutral 50 because
-the numbers sit inside a PDF nothing here can read, so it marks attention rather than
-direction. The LLM-scored records exist only for 11–13 Aug (55 of them). **The version of
-this filter that the specification actually asks for remains unmeasured.**
+* **Rule-routed only** — "a material filing occurred" (results, board meeting, dividend, a
+  SAST threshold disclosure) within five sessions. Neutral by construction: a results
+  filing scores 50 because the numbers sit inside a PDF nothing here can read, so it marks
+  attention rather than direction.
+* **LLM-scored as well** — a model judging whether the filing changes forward
+  earnings/value expectations. This is what §12 actually asks for.
+
+The second backfill added **32 records across 52 sessions of the whole NIFTY 500** (LLM
+rows 55 → 87, 20 distinct days). That sparsity is the prompt working as designed — it
+scores forward-numbers impact rather than tone, and most filings have none — but it means
+the strong definition adds very little signal to measure with.
+
+**Both definitions give the same answer.** The numbers below are the LLM-enriched run; the
+rule-only run differed by fractions of an R and reversed nothing.
+
+One source cannot be measured at all: news RSS serves ~48 hours and has no archive. The
+live filter reads filings *and* news, so any historical measurement sees strictly less than
+it would.
 
 ## Result
 
-80 symbols, 50 sessions, 2,545 triggers, gate off. Costs of ≈0.17R subtracted.
+80 symbols, 50 sessions, 2,545 triggers, gate off. Costs of ≈0.17R subtracted. Coverage now
+spans the whole replay window, so every decision is inside it and none is excluded.
 
-| Cohort | n | Win | Mean R | Net |
-| --- | --: | --: | --: | --: |
-| Every trigger | 2,545 | 9.9% | −0.47 | −0.64R |
-| Carry-gate admitted | 723 | 24.3% | +0.27 | **+0.10R** |
-| Covered by the catalyst store | 2,438 | 10.1% | −0.46 | −0.63R |
-| — had a catalyst | 138 | 14.0% | −0.29 | −0.46R |
-| — no catalyst | 2,300 | 9.9% | −0.47 | −0.64R |
+| Cohort | n | Win | Net |
+| --- | --: | --: | --: |
+| Every trigger (all covered) | 2,545 | 9.9% | −0.64R |
+| Carry-gate admitted | 723 | 24.3% | **+0.10R** |
+| — had a catalyst | 155 | 12.4% | −0.54R |
+| — no catalyst | 2,390 | 9.7% | −0.65R |
 
-Blended, requiring a catalyst looks like **+0.17R per trade**. That number should not be
+Blended, requiring a catalyst looks like **+0.11R per trade**. That number should not be
 quoted, because it reverses per setup:
 
 | Setup | has catalyst | | no catalyst | |
 | --- | --: | --: | --: | --: |
 | | n | Net | n | Net |
-| base-breakout | 17 | **+0.01R** | 37 | **+0.96R** |
-| continuation | 74 | −0.90R | 1,666 | −0.97R |
-| reclaim | 47 | **+0.06R** | 597 | **+0.18R** |
+| base-breakout | 17 | **+0.01R** | 47 | **+0.72R** |
+| continuation | 91 | −0.95R | 1,713 | −0.97R |
+| reclaim | 47 | **+0.06R** | 630 | **+0.12R** |
 
 **On both setups that make money, requiring a catalyst makes them worse.** It is mildly
 positive only on continuation, which loses heavily either way.
@@ -82,13 +94,13 @@ The table above is the gate-off population, which the engine never trades. The l
 applies the carry gate first, so the question that decides whether filter 5 should ship is
 narrower: **among carry-admitted trades, does requiring a catalyst help?**
 
-| Cohort (carry-admitted, covered) | n | Win | Net |
+| Cohort (carry-admitted) | n | Win | Net |
 | --- | --: | --: | --: |
-| Admitted — filter 5 off (today) | 688 | 25.3% | +0.147R |
+| Admitted — filter 5 off (today) | 723 | 24.3% | +0.104R |
 | Admitted + catalyst — filter 5 on | 50 | 27.1% | **+0.189R** |
-| Admitted, no catalyst — what filter 5 cuts | 638 | 25.1% | +0.144R |
+| Admitted, no catalyst — what filter 5 cuts | 673 | 24.1% | +0.097R |
 
-At first reading that supports the filter: +0.19R against +0.14R. It does not survive being
+At first reading that supports the filter: +0.19R against +0.10R. It does not survive being
 opened up.
 
 The with-catalyst cohort is **47 reclaims, 2 base-breakouts and 1 continuation**. Those
@@ -98,12 +110,16 @@ the trades.** Strip them and the only cohort with a usable sample says the oppos
 | Like-for-like, reclaim only | n | Net |
 | --- | --: | --: |
 | reclaim + catalyst | 47 | **+0.063R** |
-| reclaim, no catalyst | 597 | **+0.178R** |
+| reclaim, no catalyst | 630 | **+0.123R** |
 
 So the apparent benefit inside the admitted population rests on three trades, and on the one
-comparison with enough data to mean anything the filter is **removing** roughly 0.12R per
-trade. Both blended figures — the +0.17R gate-off and the +0.04R admitted — point the
+comparison with enough data to mean anything the filter is **removing** roughly 0.06R per
+trade. Both blended figures — the +0.11R gate-off and the +0.09R admitted — point the
 opposite way from every adequately-sampled cohort underneath them.
+
+Adding the LLM-scored catalysts did not move this cohort at all: it stayed at exactly 47
+reclaims. The 32 new records landed almost entirely on continuation, the setup that loses
+either way.
 
 ## What this does and does not establish
 
@@ -111,9 +127,10 @@ Against it being taken as settled:
 
 - **The cohorts are small.** 17 base-breakout and 47 reclaim trades with a catalyst
   establish nothing on their own. Read the direction, not the magnitude.
-- **The catalyst definition is the weak one** described above. A filing occurring is a poor
-  proxy for "why now", and it is plausible that the LLM-judged version behaves differently
-  — that is an argument for measuring it, not for assuming it.
+- **News is still missing from the historical view.** Both definitions above are
+  filings-only, because RSS cannot be backfilled. If real "why now" lives mostly in news
+  rather than filings, this measurement cannot see it — and it is the live filter's second
+  source.
 - **The 80 symbols are hindsight-selected** (see `2026-08-17-published-numbers.md`), so
   absolute expectancies are upper bounds. The catalyst comparison is same-universe on both
   sides, so the *relative* claim survives that, exactly as the carry comparison does.
@@ -139,21 +156,19 @@ definition, so the case is unproven rather than closed.
 `test_filter_is_disarmed_by_default_on_the_measurement` pins the default, so restoring it
 is a decision someone has to make on purpose rather than a tidy-up.
 
-## Why the strong definition is still unmeasured — and may stay that way
+## The strong definition was measured, and it changed nothing
 
-The obvious next step is to re-run the backfill **with** the LLM and repeat. That was
-started on 18 Aug (and is now affordable: groq's configured model had been decommissioned
-and every call burned a 60s timeout before the cascade moved on, which is fixed). Early
-results say it will not settle much:
+The obvious objection to the first run — that it tested "a filing occurred" rather than a
+judged expectation change — was closed by re-running the backfill with the LLM and
+repeating the measurement. Both give the same verdict, and the strong definition is if
+anything *less* informative, for a structural reason:
 
-* **LLM-scored catalysts from filings are very sparse.** Three days of backfill produced
-  **two** records. Most filings genuinely carry no expectation change — which is the prompt
-  working as designed, since it is built to score forward-numbers impact rather than tone,
-  and "Board Meeting Intimation" has none.
-* **The richer source cannot be backfilled at all.** News RSS serves roughly 48 hours. The
-  live filter sees filings *and* news; any historical measurement sees filings only.
+* **It is very sparse.** 32 records across 52 sessions of the entire NIFTY 500. Most
+  filings carry no expectation change, which is the prompt doing its job.
+* **It did not touch the cohort that decides the question.** The admitted reclaim cohort
+  stayed at exactly 47 trades. The new records landed on continuation.
+* **The richer source still cannot be backfilled.** News RSS serves ~48 hours.
 
-So the strong-definition cohort is likely to be too small to measure on the available
-window, and a historical measurement can never fully represent the live filter. That is an
-argument for leaving the filter off by default and revisiting it with *forward*-collected
-data, not for assuming it would have helped.
+So the remaining uncertainty is not "the weak definition was tested" — it is that news is
+invisible to any historical run. That is an argument for revisiting the filter with
+*forward*-collected data, not for assuming it would have helped.

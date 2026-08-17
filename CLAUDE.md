@@ -61,15 +61,21 @@ news pass is capped at 120 items and 90 filings and the announcement APIs are bl
 **An empty catalyst result across the whole shortlist disarms the filter** (`catalyst_status`
 = `outage`) rather than refusing the universe: a broken feed must never render as a
 selective day. `--no-require-catalyst` turns it off deliberately, which is reported
-differently again. **It has now been measured, and the measurement does not support it.** Blended it looks
-positive (+0.17R gate-off, +0.04R inside the admitted population); both figures are setup
+differently again. **It has now been measured twice, and neither measurement supports it.** Blended it looks
+positive (+0.11R gate-off, +0.09R inside the admitted population); both figures are setup
 mix. Per setup it removes edge from the two that have any — base-breakout +0.01R with a
-catalyst against +0.96R without, reclaim +0.06R against +0.18R — and inside the admitted
+catalyst against +0.72R without, reclaim +0.06R against +0.12R — and inside the admitted
 population 69% of the with-catalyst cohort's total R comes from 3 of its 50 trades. The
-largest like-for-like comparison available (47 reclaims vs 597) says the filter costs
-~0.12R per trade. Caveat that keeps it open rather than settled: the backfill is
-rule-routed, so "catalyst" measured here means *a material filing occurred*, not a model
-judging an expectation change. Full analysis:
+largest like-for-like comparison available (47 reclaims vs 630) says the filter costs
+~0.06R per trade.
+
+The obvious objection — that this tested "a filing occurred" rather than a judged
+expectation change — was closed by backfilling the window through the LLM and repeating it.
+Same verdict, and the admitted reclaim cohort did not move by a single trade: the strong
+definition yields only 32 records across 52 sessions of the whole NIFTY 500, because most
+filings genuinely carry no expectation change. What remains untestable is **news**, which
+serves ~48h and cannot be backfilled at all — so revisit this with forward-collected data,
+not by re-running history. Full analysis:
 `docs/2026-08-18-catalyst-filter-measurement.md`.
 
 **A stop is never moved to make a trade fit.** Not widened to admit a candidate, not

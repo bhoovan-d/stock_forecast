@@ -141,22 +141,19 @@ class Settings(BaseSettings):
     # merely scored down (catalyst weight 0.12, neutral 50) and published anyway.
     #
     # **Default off, on the measurement.** It was armed when first added and then measured
-    # the same day (docs/2026-08-18-catalyst-filter-measurement.md), and the measurement
-    # does not support it. Blended it looks positive (+0.17R gate-off, +0.04R inside the
-    # admitted population) but both figures are setup mix: per setup it removes edge from
-    # the two that have any — base-breakout +0.01R with a catalyst against +0.96R without,
-    # reclaim +0.06R against +0.18R — and inside the admitted population 69% of the
-    # with-catalyst cohort's total R comes from 3 of its 50 trades. The largest
-    # like-for-like comparison available, 47 reclaims against 597, says the filter costs
-    # ~0.12R per trade. It also refuses ~93% of candidates: 10 of 135 survived on 14 Aug,
-    # PIIND — the only name published that day — among the refused.
+    # the same day (docs/2026-08-18-catalyst-filter-measurement.md), twice, on both a
+    # filings-occurred definition and an LLM-judged one. Neither supports it. Blended it
+    # looks positive (+0.11R gate-off, +0.09R admitted) but both figures are setup mix: per
+    # setup it removes edge from the two that have any — base-breakout +0.01R with a
+    # catalyst against +0.72R without, reclaim +0.06R against +0.12R — and inside the
+    # admitted population 69% of the with-catalyst cohort's total R comes from 3 of its 50
+    # trades. The largest like-for-like comparison, 47 reclaims against 630, says the
+    # filter costs ~0.06R per trade. It also refuses ~93% of candidates: 10 of 135 survived
+    # on 14 Aug, PIIND — the only name published that day — among the refused.
     #
-    # Not deleted, because the measurement is of the *weak* definition. The backfill behind
-    # it is rule-routed, so "catalyst" there means a material filing occurred, not a model
-    # judging an expectation change. §12 asks for the second, and it is still unmeasured:
-    # filings-derived LLM catalysts are very sparse and the news feeds cannot be
-    # backfilled at all (~48h of history). Turn it on with `--require-catalyst` when there
-    # is evidence for it.
+    # Not deleted: the code is correct and tested, and one source stays untestable. News
+    # RSS serves ~48h and cannot be backfilled, so no historical run sees what the live
+    # filter would. Revisit with forward-collected data; `--require-catalyst` arms it.
     v3_require_catalyst: bool = False
 
     # ── Master scoring weights (Engineer Brief §17) ───────────────────────────
