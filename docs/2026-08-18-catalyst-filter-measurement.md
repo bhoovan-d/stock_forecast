@@ -76,6 +76,35 @@ This is the same shape as the carry gate on reclaim, and the same lesson: a filt
 useful in aggregate while removing edge from every cohort it touches. The backtest report
 now prints the per-setup rows directly under the blended row so the two cannot be read apart.
 
+## The decision-relevant cut: inside what the engine actually takes
+
+The table above is the gate-off population, which the engine never trades. The live engine
+applies the carry gate first, so the question that decides whether filter 5 should ship is
+narrower: **among carry-admitted trades, does requiring a catalyst help?**
+
+| Cohort (carry-admitted, covered) | n | Win | Net |
+| --- | --: | --: | --: |
+| Admitted — filter 5 off (today) | 688 | 25.3% | +0.147R |
+| Admitted + catalyst — filter 5 on | 50 | 27.1% | **+0.189R** |
+| Admitted, no catalyst — what filter 5 cuts | 638 | 25.1% | +0.144R |
+
+At first reading that supports the filter: +0.19R against +0.14R. It does not survive being
+opened up.
+
+The with-catalyst cohort is **47 reclaims, 2 base-breakouts and 1 continuation**. Those
+three non-reclaim trades carry **+6.49R of the cohort's +9.45R total — 69% of it, from 6% of
+the trades.** Strip them and the only cohort with a usable sample says the opposite:
+
+| Like-for-like, reclaim only | n | Net |
+| --- | --: | --: |
+| reclaim + catalyst | 47 | **+0.063R** |
+| reclaim, no catalyst | 597 | **+0.178R** |
+
+So the apparent benefit inside the admitted population rests on three trades, and on the one
+comparison with enough data to mean anything the filter is **removing** roughly 0.12R per
+trade. Both blended figures — the +0.17R gate-off and the +0.04R admitted — point the
+opposite way from every adequately-sampled cohort underneath them.
+
 ## What this does and does not establish
 
 Against it being taken as settled:
@@ -92,6 +121,8 @@ Against it being taken as settled:
 In its favour:
 
 - the direction is consistent across the two profitable setups rather than resting on one;
+- it holds on the single largest like-for-like comparison available — 47 reclaims against
+  597, inside the population the engine actually trades;
 - it is the same failure mode already measured once on this codebase, so the mechanism is
   not speculative.
 

@@ -57,8 +57,16 @@ news pass is capped at 120 items and 90 filings and the announcement APIs are bl
 **An empty catalyst result across the whole shortlist disarms the filter** (`catalyst_status`
 = `outage`) rather than refusing the universe: a broken feed must never render as a
 selective day. `--no-require-catalyst` turns it off deliberately, which is reported
-differently again. **The backtest does not include this filter** — `v3_backtest` calls
-`detect_setup` / `build_v3_plan` directly, so every measured number predates it.
+differently again. **It has now been measured, and the measurement does not support it.** Blended it looks
+positive (+0.17R gate-off, +0.04R inside the admitted population); both figures are setup
+mix. Per setup it removes edge from the two that have any — base-breakout +0.01R with a
+catalyst against +0.96R without, reclaim +0.06R against +0.18R — and inside the admitted
+population 69% of the with-catalyst cohort's total R comes from 3 of its 50 trades. The
+largest like-for-like comparison available (47 reclaims vs 597) says the filter costs
+~0.12R per trade. Caveat that keeps it open rather than settled: the backfill is
+rule-routed, so "catalyst" measured here means *a material filing occurred*, not a model
+judging an expectation change. Full analysis:
+`docs/2026-08-18-catalyst-filter-measurement.md`.
 
 **A stop is never moved to make a trade fit.** Not widened to admit a candidate, not
 tightened to manufacture the R multiple. If the valid invalidation sits outside the
