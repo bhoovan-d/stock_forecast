@@ -139,6 +139,18 @@ Do not read the backtest's trade count as an output forecast. It counts every tr
 the quality floor and the daily cap switched off, because a gate cannot be measured against
 trades it never saw. 43 candidates → 1 published on 14 Aug is the live pipeline.
 
+**The quality score is measured too, as of 19 Aug 2026, and only works behind the carry
+gate.** On the admitted population the top score decile beats the rest by +0.31R, and within
+reclaim alone the top quartile makes +0.40R against +0.14R — genuine ranking, not a proxy for
+setup type. Ungated it *inverts* (top decile -0.135R): high scores attract flags, because
+strong RS and clean structure is what a pole looks like. Score and gate are one mechanism and
+must be judged together. Three modules contribute nothing to the decile decision — catalyst
+(a constant at 50.0 for 98% of trades), sector leadership and volatility, 28% of the weight
+between them. Removing the catalyst weight is arithmetic and safe; reweighting toward the
+modules that measured best would be fitting this one hindsight-selected window, so it needs
+out-of-sample confirmation first. Full analysis:
+`docs/2026-08-19-quality-score-measurement.md`.
+
 Full analysis: `docs/2026-08-16-carry-gate-measurement.md`. Where the floor, the regime
 scale and the fill band come from: `docs/2026-08-17-published-numbers.md`.
 

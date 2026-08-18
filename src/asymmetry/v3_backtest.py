@@ -64,6 +64,56 @@ from .engines.v3 import V3Reject, average_daily_range, build_v3_plan
 from .engines.indicators import atr
 
 
+class ScorePanel:
+    """Point-in-time inputs for `quality_score`, cached per decision date.
+
+    Built because the quality score had never been measured at all. The replay exercised
+    `detect_setup` and `build_v3_plan` — the hard filters — and stopped there, so the nine
+    weighted modules and the regime threshold sitting on top of them were carried on
+    engineering judgement alone. That is a lot of machinery to leave untested, and it is
+    where the catalyst weight lives.
+
+    `composite_rs` and `sector_states` both read `.iloc[-1]`, so truncating the history to a
+    date gives their value *as of* that date with no other change. The cache matters: the
+    cross-section is over ~470 names and the replay asks for it thousands of times across
+    roughly fifty distinct dates.
+    """
+
+    def __init__(self, history: pd.DataFrame, sector_map: dict[str, str]):
+        # Filtered to the liquid universe, exactly as `stage_one` does before computing RS.
+        # Left unfiltered this ranks against every symbol in the store — 2,546 rather than
+        # 473 — and a percentile against a different population is a different number.
+        self._history = history[history["symbol"].isin(sector_map)]
+        self._sector_map = sector_map
+        self._cache: dict[date, tuple] = {}
+
+    def at(self, as_of: date):
+        """(rs frame, sector states) as they stood at the close of ``as_of``."""
+        if as_of in self._cache:
+            return self._cache[as_of]
+
+        from .engines.sectors import build_sector_composites
+        from .engines.v3 import composite_rs, sector_states
+
+        frame = self._history[self._history["date"] <= as_of]
+        try:
+            closes = frame.pivot_table(index="date", columns="symbol", values="close").sort_index()
+            composites = build_sector_composites(frame, self._sector_map)
+            bench_frame = build_sector_composites(frame, {s: "ALL" for s in self._sector_map})
+            benchmark = bench_frame["ALL"] if not bench_frame.empty else closes.mean(axis=1)
+            rs = composite_rs(
+                closes, benchmark, {c: composites[c] for c in composites.columns},
+                self._sector_map,
+            )
+            states = sector_states(frame, self._sector_map)
+        except Exception as exc:  # noqa: BLE001 — a thin early date must not kill the run
+            logger.debug(f"[score-panel] {as_of}: {exc}")
+            rs, states = pd.DataFrame(), {}
+
+        self._cache[as_of] = (rs, states)
+        return self._cache[as_of]
+
+
 @dataclass
 class Trade:
     symbol: str
@@ -96,6 +146,10 @@ class Trade:
     has_catalyst: bool = False
     catalyst_score: float = 50.0
     catalyst_note: str = ""
+    # The nine `quality_score` modules as they stood at the decision, and the score they
+    # produce under the live weights. Empty when no ScorePanel was supplied.
+    modules: dict = field(default_factory=dict)
+    score: float = 0.0
 
     @property
     def admitted(self) -> bool:
@@ -259,6 +313,59 @@ def _resolve_forward(
     return trade
 
 
+def _score_decision(panel, symbol, sector, as_of, plan, setup, daily_slice, carry,
+                    catalyst_score, atr_pct):
+    """The nine modules for one historical decision, scored through the live functions.
+
+    Every directional input is mirrored for a short here exactly as `run_v3_scan` does it.
+    Getting that wrong would make the measurement flatter the score rather than test it.
+    """
+    from .config import settings
+    from .engines.structure import analyse_timeframe
+    from .engines.v3 import average_daily_range, move_feasible, quality_score
+    from .engines.v3_scan import structure_grade
+
+    rs, states = panel.at(as_of)
+    long_side = plan.direction == "long"
+
+    def directional(value: float) -> float:
+        return value if long_side else 100 - value
+
+    row = rs.loc[symbol] if (not rs.empty and symbol in rs.index) else None
+    rs_nifty = float(row["rs_nifty_pct"]) if row is not None else 50.0
+    rs_sector = float(row["rs_sector_pct"]) if row is not None else 50.0
+    state = states.get(sector)
+    sector_pct = state.percentile if state else 50.0
+
+    weekly = (
+        daily_slice.resample("W")
+        .agg({"high": "max", "low": "min", "close": "last", "volume": "sum"})
+        .dropna()
+    )
+    w_state = analyse_timeframe(weekly, "Weekly", ema_spans=(20, 50))
+    d_state = analyse_timeframe(daily_slice, "Daily", ema_spans=(20, 50))
+
+    _f, volatility_score, _n = move_feasible(
+        plan.target_pct, average_daily_range(daily_slice), atr_pct
+    )
+    band = settings.v3_max_stop_pct - settings.min_stop_pct
+    centred = 1 - abs(plan.stop_pct - (settings.min_stop_pct + band / 2)) / (band / 2)
+    entry_quality = float(np.clip(50 + 50 * centred, 0, 100))
+
+    total, modules = quality_score(
+        rs_nifty_pct=directional(rs_nifty),
+        rs_sector_pct=directional(rs_sector),
+        sector_percentile=directional(sector_pct),
+        structure_score=structure_grade(plan.direction, w_state.trend, d_state.trend),
+        setup_quality=setup.quality,
+        entry_quality=entry_quality,
+        catalyst_score=directional(catalyst_score),
+        volatility_score=volatility_score,
+        carry_score=carry.score,
+    )
+    return modules, total
+
+
 def backtest_symbol(
     symbol: str,
     daily: pd.DataFrame,
@@ -267,6 +374,8 @@ def backtest_symbol(
     bars_per_session: int = 25,
     step_bars: int = 5,
     catalysts=None,
+    panel: ScorePanel | None = None,
+    sector: str = "",
 ) -> list[Trade]:
     """Replay the engine's own triggers over the available 15m history for one symbol."""
     intraday = yahoo.fetch_chart(yahoo.to_yahoo_symbol(symbol), range_="60d", interval="15m")
@@ -342,7 +451,15 @@ def backtest_symbol(
             if covered:
                 catalyst_score, catalyst_note = catalysts.at(symbol, as_of)
 
+        modules, score = {}, 0.0
+        if panel is not None:
+            modules, score = _score_decision(
+                panel, symbol, sector, as_of, plan, setup, daily_slice, carry,
+                catalyst_score, day_atr / price * 100,
+            )
+
         trade = Trade(
+            modules=modules, score=score,
             symbol=symbol, direction=plan.direction, setup=setup.kind.value,
             entered_at=intraday.index[i], entry=plan.entry, stop=plan.stop,
             target=plan.target, stop_pct=plan.stop_pct,
@@ -362,8 +479,14 @@ def run_v3_backtest(
     *,
     max_symbols: int = 60,
     horizon_sessions: int = 5,
+    score_modules: bool = False,
 ) -> BacktestResult:
-    """Backtest the V3 engine across the names that currently show setups."""
+    """Backtest the V3 engine across the names that currently show setups.
+
+    ``score_modules`` additionally reconstructs `quality_score` at each decision. Off by
+    default because it costs a cross-sectional RS computation per distinct decision date.
+    """
+    from .data import universe as universe_mod
     from .engines.v3_scan import stage_one
     from .data import nse_archive
     from .storage import load_history
@@ -379,6 +502,17 @@ def run_v3_backtest(
 
     history = history.copy()
     history["dt"] = pd.to_datetime(history["date"])
+
+    panel, sector_of = None, {}
+    if score_modules:
+        # The RS cross-section has to be the whole liquid universe, not the 80 replayed
+        # names: a percentile against 80 hand-picked symbols is not the percentile the live
+        # scan computes, and scoring against it would measure a different engine.
+        full_universe = universe_mod.load_universe()
+        liquid, _stats = universe_mod.apply_liquidity_gate(full_universe, history)
+        sector_of = {s: liquid[s].sector for s in liquid}
+        panel = ScorePanel(history, sector_of)
+        logger.info(f"[v3-backtest] scoring modules against {len(sector_of)} liquid names")
 
     catalysts = CatalystHistory(end=as_of)
     if catalysts.empty:
@@ -398,7 +532,8 @@ def run_v3_backtest(
             continue
 
         trades = backtest_symbol(
-            symbol, daily, horizon_sessions=horizon_sessions, catalysts=catalysts
+            symbol, daily, horizon_sessions=horizon_sessions, catalysts=catalysts,
+            panel=panel, sector=sector_of.get(symbol, ""),
         )
         result.trades.extend(trades)
         result.symbols_tested += 1

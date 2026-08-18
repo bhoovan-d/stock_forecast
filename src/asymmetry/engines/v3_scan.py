@@ -264,15 +264,19 @@ def trend_permits(weekly: Trend, daily: Trend, direction: str) -> bool:
     return weekly is not against and daily is not against
 
 
-def _structure_score(candidate: V3Candidate) -> float:
+def structure_grade(direction: str, weekly: Trend, daily: Trend) -> float:
     """Weekly and daily trend, scored for the direction actually being traded.
 
     This is what "structure" was always supposed to mean. The scan previously passed the
     setup detector's own quality here, so a name could score 90 on structure while its
     weekly trend was down — the exact case that put JYOTICNC on the site.
+
+    Takes the trends rather than a candidate so the backtest can score a historical decision
+    through this same function. A replay that reimplements the scoring measures the
+    reimplementation.
     """
-    with_trend = Trend.UP if candidate.direction == "long" else Trend.DOWN
-    against = Trend.DOWN if candidate.direction == "long" else Trend.UP
+    with_trend = Trend.UP if direction == "long" else Trend.DOWN
+    against = Trend.DOWN if direction == "long" else Trend.UP
 
     def grade(trend: Trend) -> float:
         if trend is with_trend:
@@ -280,7 +284,11 @@ def _structure_score(candidate: V3Candidate) -> float:
         return 0.0 if trend is against else 55.0
 
     # Weekly leads: it decides whether a multi-session hold is swimming with the tide.
-    return round(0.6 * grade(candidate.weekly_trend) + 0.4 * grade(candidate.daily_trend), 1)
+    return round(0.6 * grade(weekly) + 0.4 * grade(daily), 1)
+
+
+def _structure_score(candidate: V3Candidate) -> float:
+    return structure_grade(candidate.direction, candidate.weekly_trend, candidate.daily_trend)
 
 
 def _prefilter_rank(candidate: V3Candidate) -> float:
