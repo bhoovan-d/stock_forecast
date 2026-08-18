@@ -184,6 +184,18 @@ admitted **2 of 2,527** triggers — unmeasurable, not strict.
   for its published bhavcopy, which only exists for days that already happened. Forward
   dates (time stop, next session) count weekdays and say so in the output.
 - India's 10Y (`^IN10YT=RR`) 404s and is omitted rather than zero-filled.
+- **BSE filing PDFs are reachable** (`bseindia.com/xml-data/corpfiling/AttachLive/*.pdf`,
+  ~1MB each) and the announcements API takes an explicit date range, so filings — unlike
+  news — can be backfilled. `intelligence/results_pdf.py` reads the figures out of them and
+  caches the extracted text, because the backfill re-walks the same days.
+- **There is no consensus estimate available here at any price.** Results can be judged on
+  *trajectory* against the comparative columns the filing prints, never on surprise. The
+  scoring context says so outright: a model given only "profit rose 40%" reports a beat,
+  and a beat against nothing is a fabricated number entering a scored system.
+- **The free LLM tier is marginal for PDF-sized context.** Measured 18 Aug 2026: cerebras
+  returns 402 (quota exhausted), groq returns unparseable JSON on the longer prompt, gemini
+  carries it. The cascade order hides this until gemini also fails, so treat a working
+  catalyst pass as luck rather than capacity.
 
 ---
 

@@ -17,6 +17,9 @@ dependencies = [
     "feedparser>=6.0",
     "openai>=1.40",
     "tenacity>=8.3",
+    # Reads the figures out of results filings (intelligence/results_pdf.py). Was already
+    # present transitively; declared here because the code imports it directly.
+    "pypdf>=4.0",
 ]
 
 [project.optional-dependencies]

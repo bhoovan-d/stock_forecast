@@ -94,9 +94,16 @@ def test_procedural_filings_are_skipped():
         assert route(subcat, "Corp. Action") == "skip"
 
 
-def test_results_route_to_event_not_llm():
-    """A results filing names no numbers, so its text cannot be scored for direction."""
-    assert route("Financial Results", "Result") == "event"
+def test_results_route_to_the_pdf_reader_not_the_headline_scorer():
+    """A results filing's *subject line* names no numbers, so it must never go to `llm` —
+    scoring "Financial Results For Quarter ended June" as text is scoring nothing.
+
+    It used to route to `event`, which recorded a flat neutral 50; on the 18 Aug 2026
+    window that was 352 of 617 stored catalysts. The numbers are in the attached PDF, so it
+    now routes to `results`, which reads them. `Financial Results` stays in EVENT_SUBCATS
+    because that record is still the fallback when the PDF cannot be read.
+    """
+    assert route("Financial Results", "Result") == "results"
     assert "Financial Results" in EVENT_SUBCATS
 
 

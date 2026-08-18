@@ -26,6 +26,7 @@ from ..data import universe as universe_mod
 from ..intelligence import filings as fl_mod
 from ..intelligence import news as news_mod
 from ..intelligence.filings import fetch_filings
+from ..intelligence.results_pdf import build_context, read_results
 from ..intelligence.openai_compat import build_cascade
 from ..models import CatalystExtraction, CatalystRecord, CatalystType
 from ..storage import save_catalysts
@@ -84,15 +85,16 @@ def _score_one(
 
 
 def _event_record(filing) -> CatalystRecord:
-    """A filing whose *occurrence* is the signal, not its text.
+    """A filing whose *occurrence* is the signal, because its content is not available.
 
-    Results are the main case. The subject line confirms results were approved, but the
-    actual numbers are inside a multi-megabyte PDF, so no text model can read the surprise
-    from what we have. Scoring it as a mild positive would be inventing information.
+    Recorded as a neutral-but-flagged event: it marks the stock as "something was filed",
+    and the volume/delivery factors carry the market's own verdict. Scoring it directionally
+    would be inventing information.
 
-    Instead this is recorded as a neutral-but-flagged event: it marks the stock as "just
-    reported", and the volume/delivery factors carry the market's own verdict on whether
-    the numbers were good. The brief surfaces it so you know to look.
+    For results this is now the **fallback**, not the default — `_results_record` reads the
+    attached PDF and scores the reported figures, and lands here only when they could not be
+    read. Until 18 Aug 2026 every results filing came through this path, which is why 352 of
+    617 stored catalysts were a flat 50.
     """
     catalyst_type, durability = fl_mod.EVENT_SUBCATS.get(
         filing.subcategory, ("none", 0)
@@ -112,6 +114,52 @@ def _event_record(filing) -> CatalystRecord:
         score=50.0,
         rationale=f"{filing.subcategory} filed — direction unknown from the filing itself",
         provider="rule",
+    )
+
+
+def _results_record(filing, cascade) -> CatalystRecord:
+    """A results filing scored on the figures it actually reported.
+
+    Falls back to `_event_record` — the neutral, direction-unknown marker — whenever the
+    numbers could not be read: no cascade, an unreachable PDF, a scanned image, an
+    unparseable response. That fallback is the whole safety property. A results filing whose
+    numbers were not read must not be scored as though they had been, and the neutral record
+    is an honest statement that the company reported and nothing more is known.
+    """
+    if cascade is None or not cascade.available:
+        return _event_record(filing)
+
+    figures = read_results(filing.url)
+    if not figures:
+        logger.debug(f"[catalyst] {filing.symbol}: results PDF unreadable, scoring neutral")
+        return _event_record(filing)
+
+    result = cascade.score(filing.headline, build_context(figures))
+    if result is None:
+        return _event_record(filing)
+
+    extraction, provider = result
+    if extraction.score() == 50.0:
+        # The model read the figures and judged the trajectory unremarkable. That is a real
+        # answer, but it is the same answer as "not read" for filter purposes, so it is
+        # recorded as the neutral event rather than dropped — the filing still happened.
+        return _event_record(filing)
+
+    return CatalystRecord(
+        published=filing.published.replace(tzinfo=None),
+        symbol=filing.symbol,
+        headline=filing.headline[:400],
+        url=filing.url,
+        source=f"BSE {filing.subcategory} (PDF)",
+        catalyst_type=extraction.catalyst_type.value,
+        expectation_delta=extraction.expectation_delta,
+        materiality=extraction.materiality,
+        durability=extraction.durability,
+        already_priced=extraction.already_priced,
+        confidence=extraction.confidence,
+        score=extraction.score(),
+        rationale=extraction.rationale,
+        provider=provider,
     )
 
 
@@ -165,12 +213,22 @@ def score_filings(
         logger.warning(f"[catalyst] filings failed: {exc}")
         return records
 
-    routed = {"skip": 0, "event": 0, "sast": 0, "llm": 0}
+    routed = {"skip": 0, "results": 0, "event": 0, "sast": 0, "llm": 0}
     for filing in filings:
         decision = filing.route
         routed[decision] += 1
 
         if decision == "skip":
+            continue
+        if decision == "results":
+            # Reads the attached PDF and scores the figures; falls back to the neutral
+            # event record if they cannot be read. Budgeted with the LLM calls because
+            # that is what it spends.
+            if llm_budget > 0:
+                llm_budget -= 1
+                records.append(_results_record(filing, cascade))
+            else:
+                records.append(_event_record(filing))
             continue
         if decision == "event":
             records.append(_event_record(filing))
@@ -193,7 +251,8 @@ def score_filings(
             )
 
     logger.info(
-        f"[catalyst] {as_of} filings routed — skip {routed['skip']}, event {routed['event']}, "
+        f"[catalyst] {as_of} filings routed — skip {routed['skip']}, "
+        f"results {routed['results']}, event {routed['event']}, "
         f"sast {routed['sast']}, llm {routed['llm']}"
     )
     return records

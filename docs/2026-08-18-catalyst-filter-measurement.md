@@ -172,3 +172,40 @@ anything *less* informative, for a structural reason:
 So the remaining uncertainty is not "the weak definition was tested" — it is that news is
 invisible to any historical run. That is an argument for revisiting the filter with
 *forward*-collected data, not for assuming it would have helped.
+
+## Postscript: the largest catalyst category was never actually read
+
+Looking at what the store *contained* rather than what the cohorts did:
+
+| | n |
+| --- | --: |
+| rule-routed records in the window | 530 |
+| LLM-scored records | 87 |
+| — of the rule-routed: `earnings_surprise` scored **exactly 50.0** | **352** |
+
+**352 of 617 records — 57% of the store — were results filings scored a flat neutral**,
+because the only thing available was a subject line reading "Financial Results For Quarter
+ended June 2026". The numbers were inside the attached PDF and nothing read them. So "has a
+catalyst" mostly meant *this company reported recently*: an attendance marker, not an
+answer to "why now".
+
+That materially weakens the measurement above as a verdict on the *idea* of a catalyst
+filter, while leaving it correct as a verdict on the filter **as it was implemented**. The
+decisive cohort — 47 admitted reclaims — was keyed almost entirely on those neutral markers.
+
+`intelligence/results_pdf.py` closes it. Every BSE filing carries a direct PDF link, those
+PDFs fetch fine (verified: 200, ~900KB, `application/pdf`), and the reported figures print
+their comparative columns beside them. Worked example — IGL's June 2026 filing, previously
+recorded at a flat 50:
+
+    Revenue from operations   5,040.15   4,584.51   4,326.60
+    Profit for the period       186.18     277.08     355.94
+
+Revenue up ~16% year-on-year, profit down ~48%. Scored **23.33**, rationale *"Net profit
+declined sharply YoY (PAT down ~48%), requiring downward revisions to forward FY
+estimates."* That is a real directional catalyst that the store previously held as neutral.
+
+**This does not revive the filter, and must not be read as doing so.** It changes the input,
+not the result. The honest sequence is: collect forward with the PDF reader running,
+re-measure, then decide about arming filter 5 — the default stays off until a measurement
+says otherwise.

@@ -66,10 +66,18 @@ SKIP_SUBCATS = {
 
 EVENT_SUBCATS = {
     # subcategory -> (catalyst type, durability hint)
+    # "Financial Results" is still listed here because it remains the fallback when the
+    # attached PDF cannot be read — see `route` below and `_results_record`.
     "Financial Results": ("earnings_surprise", 2),
     "Dividend": ("guidance", 1),
     "Sub-division / Stock Split": ("guidance", 0),
 }
+
+# Results get their own route because their subject line is worthless and their attachment
+# is not. Measured on the 18 Aug 2026 window, "Financial Results" was 352 of 617 stored
+# catalysts and every one scored a neutral 50 — the largest category in the store saying
+# only that a company had reported. The numbers are in the linked PDF.
+RESULTS_SUBCATS = {"Financial Results"}
 
 # Substantial-acquisition disclosures: someone crossed a shareholding threshold. This is
 # the promoter/institutional activity signal, sourced from a primary disclosure rather than
@@ -83,9 +91,12 @@ SAST_SUBCATS = {
 
 
 def route(subcategory: str, category: str) -> str:
-    """How to handle a filing: 'skip', 'event', 'sast' or 'llm'."""
+    """How to handle a filing: 'skip', 'results', 'event', 'sast' or 'llm'."""
     if subcategory in SKIP_SUBCATS:
         return "skip"
+    # Before the generic event route, which would score it a neutral 50 on its subject line.
+    if subcategory in RESULTS_SUBCATS:
+        return "results"
     if subcategory in EVENT_SUBCATS:
         return "event"
     if subcategory in SAST_SUBCATS:
