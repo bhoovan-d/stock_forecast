@@ -1,0 +1,250 @@
+<title>Asymmetry Brief — 19 Aug 2026</title>
+<style>
+*,*::before,*::after{box-sizing:border-box}
+:root{
+  --ground:#F4F6F8; --surface:#FFFFFF; --raised:#FAFBFC;
+  --line:#DDE3EA; --line-strong:#C3CCD6;
+  --text:#111820; --text-dim:#4B586A; --muted:#6E7C8E;
+  --accent:#22697F; --accent-soft:#E2F0F5;
+  --pos:#12805A; --neg:#C0392F; --caution:#9A6A12;
+  --pos-soft:#E3F4EC; --neg-soft:#FBE9E7; --caution-soft:#FAF0DC;
+  --shadow:0 1px 2px rgba(16,26,38,.06),0 4px 16px rgba(16,26,38,.05);
+  --sans:ui-sans-serif,-apple-system,"Segoe UI Variable Text","Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --mono:ui-monospace,"Cascadia Mono","SF Mono","Roboto Mono",Consolas,"Liberation Mono",monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --ground:#0A0D12; --surface:#121820; --raised:#182029;
+    --line:#232D3A; --line-strong:#33404F;
+    --text:#E6EBF2; --text-dim:#A2AEBF; --muted:#7C8899;
+    --accent:#62B6D9; --accent-soft:#12303B;
+    --pos:#3FBF87; --neg:#F0736B; --caution:#DFAA4B;
+    --pos-soft:#0F2A20; --neg-soft:#2E1614; --caution-soft:#2B2211;
+    --shadow:0 1px 2px rgba(0,0,0,.4),0 4px 20px rgba(0,0,0,.3);
+  }
+}
+:root[data-theme="dark"]{
+  --ground:#0A0D12; --surface:#121820; --raised:#182029;
+  --line:#232D3A; --line-strong:#33404F;
+  --text:#E6EBF2; --text-dim:#A2AEBF; --muted:#7C8899;
+  --accent:#62B6D9; --accent-soft:#12303B;
+  --pos:#3FBF87; --neg:#F0736B; --caution:#DFAA4B;
+  --pos-soft:#0F2A20; --neg-soft:#2E1614; --caution-soft:#2B2211;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 4px 20px rgba(0,0,0,.3);
+}
+:root[data-theme="light"]{
+  --ground:#F4F6F8; --surface:#FFFFFF; --raised:#FAFBFC;
+  --line:#DDE3EA; --line-strong:#C3CCD6;
+  --text:#111820; --text-dim:#4B586A; --muted:#6E7C8E;
+  --accent:#22697F; --accent-soft:#E2F0F5;
+  --pos:#12805A; --neg:#C0392F; --caution:#9A6A12;
+  --pos-soft:#E3F4EC; --neg-soft:#FBE9E7; --caution-soft:#FAF0DC;
+  --shadow:0 1px 2px rgba(16,26,38,.06),0 4px 16px rgba(16,26,38,.05);
+}
+
+body{margin:0;background:var(--ground);color:var(--text);
+  font-family:var(--sans);font-size:15px;line-height:1.55;
+  -webkit-font-smoothing:antialiased}
+.wrap{max-width:1120px;margin:0 auto;padding:0 24px 96px}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+
+/* ── masthead ─────────────────────────────────────────────── */
+.masthead{display:flex;flex-wrap:wrap;gap:20px;align-items:flex-end;
+  justify-content:space-between;padding:44px 0 22px;border-bottom:2px solid var(--text)}
+.brand{display:flex;flex-direction:column;gap:6px}
+.brand h1{margin:0;font-size:31px;font-weight:680;letter-spacing:-.025em;text-wrap:balance}
+.brand .sub{color:var(--muted);font-size:13.5px}
+.meta{display:flex;gap:9px;flex-wrap:wrap}
+.chip{font-family:var(--mono);font-size:11px;letter-spacing:.07em;text-transform:uppercase;
+  padding:5px 10px;border:1px solid var(--line-strong);border-radius:3px;color:var(--text-dim);
+  background:var(--surface);white-space:nowrap}
+.chip.live{border-color:var(--pos);color:var(--pos);background:var(--pos-soft)}
+.chip.degraded{border-color:var(--caution);color:var(--caution);background:var(--caution-soft)}
+
+/* ── step sections ────────────────────────────────────────── */
+.step{margin-top:52px}
+.step-head{display:flex;align-items:baseline;gap:14px;margin-bottom:18px;
+  padding-bottom:9px;border-bottom:1px solid var(--line)}
+.step-n{font-family:var(--mono);font-size:11.5px;color:var(--accent);
+  letter-spacing:.13em;font-weight:600;white-space:nowrap}
+.step-head h2{margin:0;font-size:19.5px;font-weight:640;letter-spacing:-.015em}
+.step-head .q{color:var(--muted);font-size:13.5px;font-style:italic;margin-left:auto;
+  text-align:right}
+
+/* ── regime ───────────────────────────────────────────────── */
+.regime{background:var(--surface);border:1px solid var(--line);border-radius:6px;
+  box-shadow:var(--shadow);overflow:hidden;display:grid;
+  grid-template-columns:minmax(230px,300px) 1fr}
+.verdict{padding:26px 24px;border-right:1px solid var(--line);
+  display:flex;flex-direction:column;gap:13px;position:relative}
+.verdict::before{content:"";position:absolute;inset:0 auto 0 0;width:4px;background:var(--vc)}
+.verdict .label{font-family:var(--mono);font-size:10.5px;letter-spacing:.13em;
+  text-transform:uppercase;color:var(--muted)}
+.verdict .state{font-size:25px;font-weight:660;letter-spacing:-.02em;color:var(--vc);
+  line-height:1.15;text-wrap:balance}
+.dot{width:9px;height:9px;border-radius:50%;background:var(--vc);display:inline-block;
+  margin-right:9px;vertical-align:middle;box-shadow:0 0 0 3px color-mix(in srgb,var(--vc) 22%,transparent)}
+.tally{font-family:var(--mono);font-size:13px;color:var(--text-dim);
+  padding-top:12px;border-top:1px solid var(--line)}
+.tally b{color:var(--vc);font-size:16px}
+
+.inputs{display:flex;flex-direction:column}
+.input-row{display:grid;grid-template-columns:132px 66px 1fr;gap:14px;align-items:center;
+  padding:13px 22px;border-bottom:1px solid var(--line)}
+.input-row:last-child{border-bottom:0}
+.input-row .nm{font-size:13.5px;font-weight:560}
+.input-row .dt{font-size:12.5px;color:var(--text-dim);line-height:1.45}
+/* diverging three-cell: negative | neutral | positive */
+.diverge{display:grid;grid-template-columns:repeat(3,1fr);gap:3px;height:19px}
+.diverge span{border-radius:2px;background:var(--line);position:relative}
+.diverge span.on{background:var(--sc)}
+.diverge span.on::after{content:"";position:absolute;inset:0;border-radius:2px;
+  box-shadow:0 0 0 1px color-mix(in srgb,var(--sc) 55%,transparent)}
+
+.gamma{padding:18px 22px;border-top:1px solid var(--line);background:var(--raised)}
+.gamma .cap{font-family:var(--mono);font-size:10.5px;letter-spacing:.11em;
+  text-transform:uppercase;color:var(--muted);margin-bottom:13px}
+.axis{position:relative;height:34px;margin:0 4px}
+.axis .track{position:absolute;top:15px;left:0;right:0;height:3px;background:var(--line);
+  border-radius:2px}
+.axis .fill{position:absolute;top:15px;height:3px;border-radius:2px;background:var(--accent)}
+.axis .tick{position:absolute;top:6px;width:2px;height:21px;background:var(--text);
+  transform:translateX(-1px)}
+.axis .tick.flip{background:var(--caution);width:2px}
+.axis .lab{position:absolute;top:-2px;font-family:var(--mono);font-size:10.5px;
+  color:var(--text-dim);transform:translateX(-50%);white-space:nowrap}
+.gamma .note{margin-top:9px;font-size:12.5px;color:var(--text-dim)}
+.gamma .note b{font-family:var(--mono);color:var(--text)}
+
+/* ── shortlist ────────────────────────────────────────────── */
+.scroller{overflow-x:auto;background:var(--surface);border:1px solid var(--line);
+  border-radius:6px;box-shadow:var(--shadow)}
+table{border-collapse:collapse;width:100%;min-width:760px}
+thead th{font-family:var(--mono);font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--muted);font-weight:500;text-align:left;padding:12px 14px;
+  border-bottom:1px solid var(--line-strong);white-space:nowrap;background:var(--raised)}
+thead th.r{text-align:right}
+tbody td{padding:12px 14px;border-bottom:1px solid var(--line);font-size:13.5px;
+  vertical-align:middle}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:hover{background:var(--raised)}
+td.r{text-align:right}
+.rank{font-family:var(--mono);color:var(--muted);font-size:12px}
+.tkr{font-family:var(--mono);font-weight:640;font-size:13.5px;letter-spacing:-.01em}
+.tkr .co{display:block;font-family:var(--sans);font-weight:400;font-size:11.5px;
+  color:var(--muted);letter-spacing:0;margin-top:2px}
+.sect{font-size:12px;color:var(--text-dim)}
+.score{font-family:var(--mono);font-weight:640;font-size:14.5px}
+
+/* factor micro-bars */
+.factors{display:flex;gap:5px;align-items:flex-end;height:26px}
+.fbar{width:11px;background:var(--line);border-radius:1px;position:relative;
+  display:flex;align-items:flex-end;overflow:hidden}
+.fbar i{display:block;width:100%;background:var(--accent);border-radius:1px}
+.fbar.cat i{background:var(--caution)}
+.flegend{display:flex;gap:5px;margin-top:5px}
+.flegend span{width:11px;font-family:var(--mono);font-size:8.5px;color:var(--muted);
+  text-align:center}
+
+/* ── why ──────────────────────────────────────────────────── */
+.why-grid{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(320px,1fr))}
+.why{background:var(--surface);border:1px solid var(--line);border-left:3px solid var(--accent);
+  border-radius:5px;padding:17px 19px;box-shadow:var(--shadow)}
+.why h3{margin:0 0 3px;font-family:var(--mono);font-size:14px;font-weight:640}
+.why .co{color:var(--muted);font-size:12px;margin-bottom:12px}
+.why dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:7px 12px;font-size:12.5px}
+.why dt{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--muted);padding-top:2px}
+.why dd{margin:0;color:var(--text-dim);line-height:1.5}
+.why dd b{color:var(--text);font-family:var(--mono)}
+
+/* ── trade plans: the asymmetry bar ───────────────────────── */
+.plans{display:flex;flex-direction:column;gap:12px}
+.plan{background:var(--surface);border:1px solid var(--line);border-radius:6px;
+  padding:17px 20px;box-shadow:var(--shadow);display:grid;gap:15px;
+  grid-template-columns:minmax(150px,190px) 1fr minmax(96px,auto);align-items:center}
+.plan .id{display:flex;flex-direction:column;gap:3px}
+.plan .id .t{font-family:var(--mono);font-weight:660;font-size:15px}
+.plan .id .s{font-size:11.5px;color:var(--muted);line-height:1.4}
+.plan .warn{font-size:11px;color:var(--caution);background:var(--caution-soft);
+  border-radius:3px;padding:4px 7px;margin-top:5px;line-height:1.35}
+
+.rr{display:flex;flex-direction:column;gap:7px;min-width:0}
+.bar{display:flex;height:26px;border-radius:3px;overflow:hidden;
+  border:1px solid var(--line-strong)}
+.bar .risk{background:var(--neg-soft);border-right:2px solid var(--neg);
+  display:flex;align-items:center;justify-content:flex-start;padding-left:8px}
+.bar .reward{background:var(--pos-soft);display:flex;align-items:center;
+  justify-content:flex-end;padding-right:8px}
+.bar span{font-family:var(--mono);font-size:10.5px;font-weight:600;white-space:nowrap}
+.bar .risk span{color:var(--neg)}
+.bar .reward span{color:var(--pos)}
+.levels{display:flex;justify-content:space-between;font-family:var(--mono);font-size:11px;
+  color:var(--muted);gap:8px}
+.levels b{color:var(--text);font-weight:600}
+.levels .mid{color:var(--text)}
+
+.rmult{text-align:right;display:flex;flex-direction:column;gap:2px}
+.rmult .v{font-family:var(--mono);font-size:22px;font-weight:680;color:var(--pos);
+  letter-spacing:-.02em;line-height:1}
+.rmult .k{font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--muted)}
+.rmult .q{font-size:11px;color:var(--text-dim);margin-top:3px}
+
+/* ── watch + notes ────────────────────────────────────────── */
+.watch{background:var(--surface);border:1px dashed var(--line-strong);border-radius:6px;
+  padding:6px 20px}
+.watch .row{display:flex;justify-content:space-between;gap:14px;padding:10px 0;
+  border-bottom:1px solid var(--line);font-size:13px;align-items:center}
+.watch .row:last-child{border-bottom:0}
+.watch .why-not{color:var(--neg);font-family:var(--mono);font-size:11.5px}
+.empty{background:var(--surface);border:1px solid var(--line);border-radius:6px;
+  padding:34px 26px;text-align:center}
+.empty .h{font-size:17px;font-weight:620;margin-bottom:7px}
+.empty .p{color:var(--text-dim);font-size:13.5px;max-width:52ch;margin:0 auto}
+
+.legend{margin-top:16px;padding:15px 19px;background:var(--raised);border:1px solid var(--line);
+  border-radius:5px;font-size:12.5px;color:var(--text-dim);line-height:1.6}
+.legend b{color:var(--text)}
+footer{margin-top:56px;padding-top:22px;border-top:1px solid var(--line);
+  color:var(--muted);font-size:12px;display:flex;justify-content:space-between;
+  gap:16px;flex-wrap:wrap}
+.disclaim{margin-top:26px;padding:15px 19px;border-left:3px solid var(--caution);
+  background:var(--caution-soft);border-radius:0 5px 5px 0;font-size:12.5px;color:var(--text-dim)}
+.disclaim b{color:var(--text)}
+
+@media (max-width:820px){
+  .regime{grid-template-columns:1fr}
+  .verdict{border-right:0;border-bottom:1px solid var(--line)}
+  .input-row{grid-template-columns:106px 58px 1fr;gap:10px;padding:12px 16px}
+  .plan{grid-template-columns:1fr;gap:13px}
+  .rmult{text-align:left;flex-direction:row;align-items:baseline;gap:9px}
+  .step-head{flex-wrap:wrap}
+  .step-head .q{margin-left:0;width:100%;text-align:left}
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+<div class="wrap">
+  <header class="masthead">
+    <div class="brand">
+      <h1>Asymmetry Brief</h1>
+      <div class="sub">Wednesday, 19 August 2026 · NSE equities</div>
+    </div>
+    <div class="meta">
+      <span class="chip degraded">DELAYED (~15min)</span>
+      <span class="chip">474/500 liquid</span>
+      <span class="chip">10 shortlisted</span>
+    </div>
+  </header>
+  <section class="step"><div class="step-head"><span class="step-n">01</span><h2>Market regime</h2><span class='q'>Should I be aggressive today?</span></div><div class="regime" style="--vc:var(--caution)"><div class="verdict"><div class="label">Today's posture</div><div class="state"><span class="dot"></span>Selective</div><div class="tally">Composite <b>-1</b> <span style="color:var(--muted)">of ±5</span></div></div><div><div class="inputs"><div class="input-row"><div class="nm">NIFTY trend</div><div class="diverge"><span class="on" style="--sc:var(--neg)"></span><span class="" style="--sc:var(--muted)"></span><span class="" style="--sc:var(--pos)"></span></div><div class="dt">price above 0/3 EMAs, ordering unresolved; 20d +0.3%</div></div><div class="input-row"><div class="nm">India VIX</div><div class="diverge"><span class="" style="--sc:var(--neg)"></span><span class="" style="--sc:var(--muted)"></span><span class="on" style="--sc:var(--pos)"></span></div><div class="dt">11.3 (24th pct of 1y), 5d -3.1%</div></div><div class="input-row"><div class="nm">Dealer gamma</div><div class="diverge"><span class="on" style="--sc:var(--neg)"></span><span class="" style="--sc:var(--muted)"></span><span class="" style="--sc:var(--pos)"></span></div><div class="dt">positive gamma (138.5bn) — dealers dampen moves, expect chop; flip 23,984 (+0.4% from spot)</div></div><div class="input-row"><div class="nm">Global risk</div><div class="diverge"><span class="" style="--sc:var(--neg)"></span><span class="" style="--sc:var(--muted)"></span><span class="on" style="--sc:var(--pos)"></span></div><div class="dt">S&amp;P &gt;50DMA; Nasdaq &gt;50DMA; DXY 20d -2.2%; US10Y 20d +0.0%</div></div><div class="input-row"><div class="nm">Breadth</div><div class="diverge"><span class="on" style="--sc:var(--neg)"></span><span class="" style="--sc:var(--muted)"></span><span class="" style="--sc:var(--pos)"></span></div><div class="dt">49% above 50DMA; A/D 848/1749 (0.48)</div></div></div><div class="gamma"><div class="cap">Dealer gamma positioning</div><div class="axis"><div class="track"></div><div class="fill" style="left:44.1%;width:11.6%"></div><div class="tick" style="left:55.7%"></div><div class="lab" style="left:55.7%">spot 24,078</div><div class="tick flip" style="left:44.1%"></div><div class="lab" style="left:44.1%;top:20px">flip 23,984</div></div><div class="note">Spot sits <b>+0.4%</b> from the gamma flip. Net dealer gamma <b>138.5bn</b> — dealers hedge <b>against</b> the move, so expect chop. This is context for how the tape behaves — never an entry signal.</div></div></div></div></section><section class="step"><div class="step-head"><span class="step-n">02</span><h2>Shortlist</h2><span class='q'>Which stock is most likely to move?</span></div><div class="scroller"><table><thead><tr><th>#</th><th>Stock</th><th>Sector</th><th>Factors</th><th class='r'>Score</th><th class='r'>Close</th></tr></thead><tbody><tr><td class='rank'>01</td><td class='tkr'>IFCI<span class='co'>IFCI Ltd.</span></td><td class='sect'>Financial Services</td><td><div class="factors"><div class="fbar " title="RS 96"><i style="height:96%"></i></div><div class="fbar " title="Vo 97"><i style="height:97%"></i></div><div class="fbar " title="St 82"><i style="height:82%"></i></div><div class="fbar cat" title="Ca 50"><i style="height:50%"></i></div><div class="fbar " title="Lq 62"><i style="height:62%"></i></div></div><div class="flegend"><span>RS</span><span>Vo</span><span>St</span><span>Ca</span><span>Lq</span></div></td><td class='r score'>77.3</td><td class='r num' style='color:var(--text-dim)'>81.68</td></tr><tr><td class='rank'>02</td><td class='tkr'>HEG<span class='co'>H.E.G. Ltd.</span></td><td class='sect'>Capital Goods</td><td><div class="factors"><div class="fbar " title="RS 92"><i style="height:92%"></i></div><div class="fbar " title="Vo 82"><i style="height:82%"></i></div><div class="fbar " title="St 95"><i style="height:95%"></i></div><div class="fbar cat" title="Ca 50"><i style="height:50%"></i></div><div class="fbar " title="Lq 63"><i style="height:63%"></i></div></div><div class="flegend"><span>RS</span><span>Vo</span><span>St</span><span>Ca</span><span>Lq</span></div></td><td class='r score'>77.1</td><td class='r num' style='color:var(--text-dim)'>708.05</td></tr><tr><td class='rank'>03</td><td class='tkr'>GLAXO<span class='co'>Glaxosmithkline Pharmaceuticals Ltd.</span></td><td class='sect'>Healthcare</td><td><div class="factors"><div class="fbar " title="RS 97"><i style="height:97%"></i></div><div class="fbar " title="Vo 99"><i style="height:99%"></i></div><div class="fbar " title="St 66"><i style="height:66%"></i></div><div class="fbar cat" title="Ca 50"><i style="height:50%"></i></div><div class="fbar " title="Lq 14"><i style="height:14%"></i></div></div><div class="flegend"><span>RS</span><span>Vo</span><span>St</span><span>Ca</span><span>Lq</span></div></td><td class='r score'>74.0</td><td class='r num' style='color:var(--text-dim)'>3,032.40</td></tr><tr><td class='rank'>04</td><td class='tkr'>NAM-INDIA<span class='co'>Nippon Life India Asset Management Ltd.</span></td><td class='sect'>Financial Services</td><td><div class="factors"><div class="fbar " title="RS 79"><i style="height:79%"></i></div><div class="fbar " title="Vo 81"><i style="height:81%"></i></div><div class="fbar " title="St 97"><i style="height:97%"></i></div><div class="fbar cat" title="Ca 50"><i style="height:50%"></i></div><div class="fbar " title="Lq 59"><i style="height:59%"></i></div></div><div class="flegend"><span>RS</span><span>Vo</span><span>St</span><span>Ca</span><span>Lq</span></div></td><td class='r score'>74.0</td><td class='r num' style='color:var(--text-dim)'>1,217.00</td></tr><tr><td class='rank'>05</td><td class='tkr'>LTF<span class='co'>L&amp;T Finance Ltd.</span></td><td class='sect'>Financial Services</td><td><div class="factors"><div class="fbar " title="RS 70"><i style="height:70%"></i></div><div class="fbar " title="Vo 91"><i style="height:91%"></i></div><div class="fbar " title="St 99"><i style="height:99%"></i></div><div class="fbar cat" title="Ca 50"><i style="height:50%"></i></div><div class="fbar " title="Lq 69"><i style="height:69%"></i></div></div><div class="flegend"><span>RS</span><span>Vo</span><span>St</span><span>Ca</span><span>Lq</span></div></td><td class='r score'>73.9</td><td class='r num' style='color:var(--text-dim)'>315.40</td></tr><tr><td class='rank'>06</td><td class='tkr'>AEGISLOG<span class='co'>Aegis Logistics Ltd.</span></td><td class='sect'>Oil Gas &amp; Consumable Fuels</td><td><div class="factors"><div class="fbar " title="RS 86"><i style="height:86%"></i></div><div class="fbar " title="Vo 74"><i style="height:74%"></i></div><div class="fbar " title="St 92"><i style="height:92%"></i></div><div class="fbar cat" title="Ca 50"><i style="height:50%"></i></div><div class="fbar " title="Lq 62"><i style="height:62%"></i></div></div><div class="flegend"><span>RS</span><span>Vo</span><span>St</span><span>Ca</span><span>Lq</span></div></td><td class='r score'>73.6</td><td class='r num' style='color:var(--text-dim)'>1,364.00</td></tr><tr><td class='rank'>07</td><td class='tkr'>BALRAMCHIN<span class='co'>Balrampur Chini Mills Ltd.</span></td><td class='sect'>Fast Moving Consumer Goods</td><td><div class="factors"><div class="fbar " title="RS 88"><i style="height:88%"></i></div><div class="fbar " title="Vo 90"><i style="height:90%"></i></div><div class="fbar " title="St 80"><i style="height:80%"></i></div><div class="fbar cat" title="Ca 50"><i style="height:50%"></i></div><div class="fbar " title="Lq 33"><i style="height:33%"></i></div></div><div class="flegend"><span>RS</span><span>Vo</span><span>St</span><span>Ca</span><span>Lq</span></div></td><td class='r score'>73.6</td><td class='r num' style='color:var(--text-dim)'>650.80</td></tr><tr><td class='rank'>08</td><td class='tkr'>LENSKART<span class='co'>Lenskart Solutions Ltd.</span></td><td class='sect'>Consumer Services</td><td><div class="factors"><div class="fbar " title="RS 93"><i style="height:93%"></i></div><div class="fbar " title="Vo 96"><i style="height:96%"></i></div><div class="fbar " title="St 70"><i style="height:70%"></i></div><div class="fbar cat" title="Ca 50"><i style="height:50%"></i></div><div class="fbar " title="Lq 82"><i style="height:82%"></i></div></div><div class="flegend"><span>RS</span><span>Vo</span><span>St</span><span>Ca</span><span>Lq</span></div></td><td class='r score'>73.3</td><td class='r num' style='color:var(--text-dim)'>639.60</td></tr><tr><td class='rank'>09</td><td class='tkr'>ACE<span class='co'>Action Construction Equipment Ltd.</span></td><td class='sect'>Capital Goods</td><td><div class="factors"><div class="fbar " title="RS 96"><i style="height:96%"></i></div><div class="fbar " title="Vo 80"><i style="height:80%"></i></div><div class="fbar " title="St 76"><i style="height:76%"></i></div><div class="fbar cat" title="Ca 50"><i style="height:50%"></i></div><div class="fbar " title="Lq 34"><i style="height:34%"></i></div></div><div class="flegend"><span>RS</span><span>Vo</span><span>St</span><span>Ca</span><span>Lq</span></div></td><td class='r score'>72.8</td><td class='r num' style='color:var(--text-dim)'>1,181.20</td></tr><tr><td class='rank'>10</td><td class='tkr'>NETWEB<span class='co'>Netweb Technologies India Ltd.</span></td><td class='sect'>Information Technology</td><td><div class="factors"><div class="fbar " title="RS 95"><i style="height:95%"></i></div><div class="fbar " title="Vo 86"><i style="height:86%"></i></div><div class="fbar " title="St 72"><i style="height:72%"></i></div><div class="fbar cat" title="Ca 50"><i style="height:50%"></i></div><div class="fbar " title="Lq 97"><i style="height:97%"></i></div></div><div class="flegend"><span>RS</span><span>Vo</span><span>St</span><span>Ca</span><span>Lq</span></div></td><td class='r score'>72.7</td><td class='r num' style='color:var(--text-dim)'>5,065.00</td></tr></tbody></table></div><div class="legend">Factor bars, left to right: <b>RS</b> relative strength (vs NIFTY and vs sector) · <b>Vo</b> volume and delivery expansion · <b>St</b> price structure · <b>Ca</b> catalyst · <b>Lq</b> liquidity. Each is a percentile across the liquid universe, so 90 means top decile — not 90%.</div></section><section class="step"><div class="step-head"><span class="step-n">03</span><h2>The reason</h2><span class='q'>Why should this stock move at all?</span></div><div class="why-grid"><div class="why"><h3>NAM-INDIA</h3><div class="co">Nippon Life India Asset Management Ltd.</div><dl><dt>Macro</dt><dd>Trading <b>10.9%</b> above macro-implied fair value <b>₹1,097.05</b><br><span style='color:var(--muted);font-size:11.5px'>R²=0.40 · drivers: nifty +0.010, india_vix -0.004, crude -0.003</span></dd></dl></div><div class="why"><h3>LTF</h3><div class="co">L&amp;T Finance Ltd.</div><dl><dt>Macro</dt><dd>Trading <b>14.5%</b> above macro-implied fair value <b>₹275.46</b><br><span style='color:var(--muted);font-size:11.5px'>R²=0.43 · drivers: nifty +0.012, crude -0.003, us10y +0.001</span></dd></dl></div></div></section><section class="step"><div class="step-head"><span class="step-n">04</span><h2>Trade plans</h2><span class='q'>Can I make 2R?</span></div><div class="plans"><div class="plan"><div class="id"><div class="t">IFCI</div><div class="s">Invalidation: 1.5x ATR (no structural level in range)</div></div><div class="rr"><div class="bar"><div class="risk" style="width:21.2%"><span>risk ₹4.32</span></div><div class="reward" style="width:78.8%"><span>reward ₹16.04</span></div></div><div class="levels"><span>stop <b>91.58</b></span><span class="mid">entry <b>95.90</b></span><span>target <b>111.94</b></span></div></div><div class="rmult"><div class="k">Reward : risk</div><div class="v">3.7<span style="font-size:13px">×</span></div><div class="q">1157 sh</div></div></div><div class="plan"><div class="id"><div class="t">HEG</div><div class="s">Invalidation: 21 EMA</div></div><div class="rr"><div class="bar"><div class="risk" style="width:21.3%"><span>risk ₹42.62</span></div><div class="reward" style="width:78.7%"><span>reward ₹157.11</span></div></div><div class="levels"><span>stop <b>669.29</b></span><span class="mid">entry <b>711.91</b></span><span>target <b>869.02</b></span></div></div><div class="rmult"><div class="k">Reward : risk</div><div class="v">3.7<span style="font-size:13px">×</span></div><div class="q">117 sh</div></div></div><div class="plan"><div class="id"><div class="t">GLAXO</div><div class="s">Invalidation: 1.5x ATR (no structural level in range)</div></div><div class="rr"><div class="bar"><div class="risk" style="width:20.0%"><span>risk ₹126.69</span></div><div class="reward" style="width:80.0%"><span>reward ₹506.76</span></div></div><div class="levels"><span>stop <b>2,905.71</b></span><span class="mid">entry <b>3,032.40</b></span><span>target <b>3,539.16</b></span></div></div><div class="rmult"><div class="k">Reward : risk</div><div class="v">4.0<span style="font-size:13px">×</span></div><div class="q">39 sh</div></div></div><div class="plan"><div class="id"><div class="t">NAM-INDIA</div><div class="s">Invalidation: 21 EMA</div></div><div class="rr"><div class="bar"><div class="risk" style="width:26.7%"><span>risk ₹55.74</span></div><div class="reward" style="width:73.3%"><span>reward ₹153.40</span></div></div><div class="levels"><span>stop <b>1,178.99</b></span><span class="mid">entry <b>1,234.73</b></span><span>target <b>1,388.13</b></span></div></div><div class="rmult"><div class="k">Reward : risk</div><div class="v">2.8<span style="font-size:13px">×</span></div><div class="q">89 sh</div></div></div><div class="plan"><div class="id"><div class="t">LTF</div><div class="s">Invalidation: 1.5x ATR (no structural level in range)</div></div><div class="rr"><div class="bar"><div class="risk" style="width:28.5%"><span>risk ₹14.48</span></div><div class="reward" style="width:71.5%"><span>reward ₹36.35</span></div></div><div class="levels"><span>stop <b>324.46</b></span><span class="mid">entry <b>338.94</b></span><span>target <b>375.29</b></span></div></div><div class="rmult"><div class="k">Reward : risk</div><div class="v">2.5<span style="font-size:13px">×</span></div><div class="q">345 sh</div></div></div><div class="plan"><div class="id"><div class="t">AEGISLOG</div><div class="s">Invalidation: 1.5x ATR (no structural level in range)</div></div><div class="rr"><div class="bar"><div class="risk" style="width:24.4%"><span>risk ₹107.51</span></div><div class="reward" style="width:75.6%"><span>reward ₹333.40</span></div></div><div class="levels"><span>stop <b>1,391.79</b></span><span class="mid">entry <b>1,499.30</b></span><span>target <b>1,832.70</b></span></div></div><div class="rmult"><div class="k">Reward : risk</div><div class="v">3.1<span style="font-size:13px">×</span></div><div class="q">46 sh</div></div></div><div class="plan"><div class="id"><div class="t">BALRAMCHIN</div><div class="s">Invalidation: 21 EMA</div></div><div class="rr"><div class="bar"><div class="risk" style="width:27.2%"><span>risk ₹41.32</span></div><div class="reward" style="width:72.8%"><span>reward ₹110.60</span></div></div><div class="levels"><span>stop <b>624.85</b></span><span class="mid">entry <b>666.17</b></span><span>target <b>776.77</b></span></div></div><div class="rmult"><div class="k">Reward : risk</div><div class="v">2.7<span style="font-size:13px">×</span></div><div class="q">121 sh</div></div></div><div class="plan"><div class="id"><div class="t">LENSKART</div><div class="s">Invalidation: 1.5x ATR (no structural level in range)</div></div><div class="rr"><div class="bar"><div class="risk" style="width:20.0%"><span>risk ₹27.21</span></div><div class="reward" style="width:80.0%"><span>reward ₹108.84</span></div></div><div class="levels"><span>stop <b>612.39</b></span><span class="mid">entry <b>639.60</b></span><span>target <b>748.44</b></span></div></div><div class="rmult"><div class="k">Reward : risk</div><div class="v">4.0<span style="font-size:13px">×</span></div><div class="q">183 sh</div></div></div><div class="plan"><div class="id"><div class="t">ACE</div><div class="s">Invalidation: 21 EMA</div></div><div class="rr"><div class="bar"><div class="risk" style="width:27.6%"><span>risk ₹90.80</span></div><div class="reward" style="width:72.4%"><span>reward ₹238.20</span></div></div><div class="levels"><span>stop <b>1,090.40</b></span><span class="mid">entry <b>1,181.20</b></span><span>target <b>1,419.40</b></span></div></div><div class="rmult"><div class="k">Reward : risk</div><div class="v">2.6<span style="font-size:13px">×</span></div><div class="q">55 sh</div></div></div><div class="plan"><div class="id"><div class="t">NETWEB</div><div class="s">Invalidation: 21 EMA</div></div><div class="rr"><div class="bar"><div class="risk" style="width:26.0%"><span>risk ₹451.32</span></div><div class="reward" style="width:74.0%"><span>reward ₹1,281.40</span></div></div><div class="levels"><span>stop <b>4,822.95</b></span><span class="mid">entry <b>5,274.27</b></span><span>target <b>6,555.67</b></span></div></div><div class="rmult"><div class="k">Reward : risk</div><div class="v">2.8<span style="font-size:13px">×</span></div><div class="q">11 sh</div></div></div></div><div class="legend">Bar widths are drawn to scale — the green portion is how much further the target sits than the stop. That visible asymmetry <b>is</b> the trade thesis: every plan here clears the 2R gate, and anything below it was rejected outright rather than shown with a warning.</div></section>
+  <div class="step"><div class="step-head"><span class="step-n">05</span><h2>Watch, not trade</h2><span class="q">Strong stock, insufficient asymmetry</span></div><div class="watch"><div class="row"><span class="tkr">WELSPUNLIV</span><span class="why-not">R:R 1:1.9 below 2.0 gate</span></div><div class="row"><span class="tkr">JYOTICNC</span><span class="why-not">R:R 1:1.0 below 2.0 gate</span></div><div class="row"><span class="tkr">ELGIEQUIP</span><span class="why-not">R:R 1:1.7 below 2.0 gate</span></div><div class="row"><span class="tkr">MGL</span><span class="why-not">R:R 1:1.2 below 2.0 gate</span></div><div class="row"><span class="tkr">MRPL</span><span class="why-not">R:R 1:0.9 below 2.0 gate</span></div></div></div>
+  <div class="disclaim">
+    <b>Decision support, not execution.</b> This system holds no broker credentials that can
+    trade and contains no order-placement code. Every level here is a starting point for your
+    own judgement, not a recommendation — you place each order yourself.
+  </div>
+  <footer>
+    <span>Regime → catalyst → selection → macro → asymmetry</span>
+    <span class="num">Generated 2026-08-19</span>
+  </footer>
+</div>

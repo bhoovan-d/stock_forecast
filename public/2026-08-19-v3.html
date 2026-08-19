@@ -1,0 +1,201 @@
+<title>V3 Setups — 2026-08-19</title>
+<style>
+*,*::before,*::after{box-sizing:border-box}
+:root{
+  --ground:#F4F6F8; --surface:#FFFFFF; --raised:#FAFBFC;
+  --line:#DDE3EA; --line-strong:#C3CCD6;
+  --text:#111820; --text-dim:#4B586A; --muted:#6E7C8E;
+  --accent:#22697F; --accent-soft:#E2F0F5;
+  --pos:#12805A; --neg:#C0392F; --caution:#9A6A12;
+  --pos-soft:#E3F4EC; --neg-soft:#FBE9E7; --caution-soft:#FAF0DC;
+  --shadow:0 1px 2px rgba(16,26,38,.06),0 4px 16px rgba(16,26,38,.05);
+  --sans:ui-sans-serif,-apple-system,"Segoe UI Variable Text","Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  --mono:ui-monospace,"Cascadia Mono","SF Mono","Roboto Mono",Consolas,"Liberation Mono",monospace;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --ground:#0A0D12; --surface:#121820; --raised:#182029;
+  --line:#232D3A; --line-strong:#33404F;
+  --text:#E6EBF2; --text-dim:#A2AEBF; --muted:#7C8899;
+  --accent:#62B6D9; --accent-soft:#12303B;
+  --pos:#3FBF87; --neg:#F0736B; --caution:#DFAA4B;
+  --pos-soft:#0F2A20; --neg-soft:#2E1614; --caution-soft:#2B2211;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 4px 20px rgba(0,0,0,.3);
+}}
+:root[data-theme="dark"]{
+  --ground:#0A0D12; --surface:#121820; --raised:#182029;
+  --line:#232D3A; --line-strong:#33404F;
+  --text:#E6EBF2; --text-dim:#A2AEBF; --muted:#7C8899;
+  --accent:#62B6D9; --accent-soft:#12303B;
+  --pos:#3FBF87; --neg:#F0736B; --caution:#DFAA4B;
+  --pos-soft:#0F2A20; --neg-soft:#2E1614; --caution-soft:#2B2211;
+  --shadow:0 1px 2px rgba(0,0,0,.4),0 4px 20px rgba(0,0,0,.3);
+}
+:root[data-theme="light"]{
+  --ground:#F4F6F8; --surface:#FFFFFF; --raised:#FAFBFC;
+  --line:#DDE3EA; --line-strong:#C3CCD6;
+  --text:#111820; --text-dim:#4B586A; --muted:#6E7C8E;
+  --accent:#22697F; --accent-soft:#E2F0F5;
+  --pos:#12805A; --neg:#C0392F; --caution:#9A6A12;
+  --pos-soft:#E3F4EC; --neg-soft:#FBE9E7; --caution-soft:#FAF0DC;
+  --shadow:0 1px 2px rgba(16,26,38,.06),0 4px 16px rgba(16,26,38,.05);
+}
+body{margin:0;background:var(--ground);color:var(--text);
+  font-family:var(--sans);font-size:15px;line-height:1.55;
+  -webkit-font-smoothing:antialiased}
+.num{font-family:var(--mono);font-variant-numeric:tabular-nums}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+
+.wrap{max-width:1060px;margin:0 auto;padding:0 24px 88px}
+.masthead{display:flex;flex-wrap:wrap;gap:18px;align-items:flex-end;justify-content:space-between;
+  padding:44px 0 20px;border-bottom:2px solid var(--text)}
+.brand h1{margin:0 0 6px;font-size:30px;font-weight:680;letter-spacing:-.025em}
+.brand .sub{color:var(--muted);font-size:13.5px}
+.chips{display:flex;gap:8px;flex-wrap:wrap}
+/* Third flex child of the masthead, forced onto its own line: the regime chip states a
+   score, and this is the working behind it. Beside the chips it would read as a fourth. */
+.regime-detail{flex-basis:100%;color:var(--muted);font-size:12.5px;font-family:var(--mono)}
+.chip{font-family:var(--mono);font-size:11px;letter-spacing:.06em;text-transform:uppercase;
+  padding:5px 10px;border:1px solid var(--line-strong);border-radius:3px;color:var(--text-dim);
+  background:var(--surface);white-space:nowrap}
+.chip.pos{border-color:var(--pos);color:var(--pos);background:var(--pos-soft)}
+.chip.caution{border-color:var(--caution);color:var(--caution);background:var(--caution-soft)}
+
+section{margin-top:44px}
+h2{font-size:19px;font-weight:640;letter-spacing:-.015em;margin:0 0 6px;
+  padding-bottom:8px;border-bottom:1px solid var(--line)}
+.lede{color:var(--muted);font-size:13px;margin:0 0 18px}
+
+/* funnel */
+.funnel{display:flex;flex-direction:column;gap:7px;background:var(--surface);
+  border:1px solid var(--line);border-radius:6px;padding:18px 20px;box-shadow:var(--shadow)}
+.frow{display:grid;grid-template-columns:190px 1fr 62px;gap:12px;align-items:center}
+.frow .lbl{font-size:13px;color:var(--text-dim)}
+.frow .bar{height:16px;background:var(--accent-soft);border-radius:3px;overflow:hidden}
+.frow .bar i{display:block;height:100%;background:var(--accent);border-radius:3px}
+.frow .val{font-family:var(--mono);font-size:13px;text-align:right;
+  font-variant-numeric:tabular-nums}
+.frow.final .lbl,.frow.final .val{font-weight:680;color:var(--text)}
+.frow.final .bar i{background:var(--pos)}
+
+/* setup card */
+.card{background:var(--surface);border:1px solid var(--line);border-radius:8px;
+  box-shadow:var(--shadow);overflow:hidden;margin-bottom:16px}
+.card .head{display:flex;flex-wrap:wrap;gap:12px;align-items:baseline;
+  padding:16px 20px;border-bottom:1px solid var(--line);background:var(--raised)}
+.card .tkr{font-family:var(--mono);font-size:18px;font-weight:680;letter-spacing:-.01em}
+.dir{font-family:var(--mono);font-size:11px;letter-spacing:.08em;padding:3px 8px;border-radius:3px}
+.dir.long{background:var(--pos-soft);color:var(--pos)}
+.dir.short{background:var(--neg-soft);color:var(--neg)}
+.card .co{color:var(--muted);font-size:12.5px}
+.card .score{margin-left:auto;font-family:var(--mono);font-size:15px;font-weight:660}
+.setup-tag{font-family:var(--mono);font-size:11px;color:var(--text-dim);
+  border:1px solid var(--line-strong);border-radius:3px;padding:2px 7px}
+
+.levels{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:1px;
+  background:var(--line)}
+.lv{background:var(--surface);padding:13px 16px}
+.lv .k{font-family:var(--mono);font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;
+  color:var(--muted);margin-bottom:4px}
+.lv .v{font-family:var(--mono);font-size:15px;font-variant-numeric:tabular-nums}
+.lv.stop .v{color:var(--neg)}
+.lv.target .v{color:var(--pos)}
+
+.rr{padding:16px 20px;border-top:1px solid var(--line)}
+.rr .track{display:flex;height:26px;border-radius:3px;overflow:hidden;
+  border:1px solid var(--line-strong)}
+.rr .risk{background:var(--neg-soft);border-right:2px solid var(--neg);display:flex;
+  align-items:center;padding-left:8px}
+.rr .reward{background:var(--pos-soft);display:flex;align-items:center;justify-content:flex-end;
+  padding-right:8px}
+.rr span{font-family:var(--mono);font-size:10.5px;font-weight:600;white-space:nowrap}
+.rr .risk span{color:var(--neg)}
+.rr .reward span{color:var(--pos)}
+
+.why{padding:4px 20px 18px}
+.why dl{margin:0;display:grid;grid-template-columns:auto 1fr;gap:8px 14px;font-size:13px}
+.why dt{font-family:var(--mono);font-size:9.5px;letter-spacing:.09em;text-transform:uppercase;
+  color:var(--muted);padding-top:3px;white-space:nowrap}
+.why dd{margin:0;color:var(--text-dim);line-height:1.5}
+.why dd b{color:var(--text)}
+.chain{font-family:var(--mono);font-size:11.5px;color:var(--text-dim)}
+/* The execution block is the actionable half of the card, so it is set apart from the
+   thesis above it. Structure only — no colour, since red and green are reserved for
+   direction and risk. */
+.exec{background:var(--raised);border-top:1px solid var(--line);padding-top:14px}
+.exec dd{font-size:12.5px}
+/* The carry block sits between the thesis and the order: it is the evidence that the setup
+   can hold for 1-5 sessions, which is a separate claim from either. */
+.carry{border-top:1px solid var(--line);padding-top:14px}
+.carry dd{font-size:12.5px}
+
+table{border-collapse:collapse;width:100%;min-width:520px}
+.scroller{overflow-x:auto;background:var(--surface);border:1px solid var(--line);
+  border-radius:6px;box-shadow:var(--shadow)}
+thead th{font-family:var(--mono);font-size:10px;letter-spacing:.08em;text-transform:uppercase;
+  color:var(--muted);font-weight:500;text-align:left;padding:11px 14px;
+  border-bottom:1px solid var(--line-strong);background:var(--raised);white-space:nowrap}
+tbody td{padding:11px 14px;border-bottom:1px solid var(--line);font-size:13px}
+tbody tr:last-child td{border-bottom:0}
+td.num{font-family:var(--mono);text-align:right;font-variant-numeric:tabular-nums}
+
+.empty{background:var(--surface);border:1px solid var(--line);border-radius:6px;
+  padding:32px 26px;text-align:center}
+.empty .h{font-size:17px;font-weight:620;margin-bottom:7px}
+.empty .p{color:var(--text-dim);font-size:13.5px;max-width:56ch;margin:0 auto}
+.note{margin-top:22px;padding:14px 18px;border-left:3px solid var(--caution);
+  background:var(--caution-soft);border-radius:0 5px 5px 0;font-size:12.5px;color:var(--text-dim)}
+.note b{color:var(--text)}
+footer{margin-top:48px;padding-top:20px;border-top:1px solid var(--line);
+  color:var(--muted);font-size:12px;display:flex;justify-content:space-between;gap:16px;
+  flex-wrap:wrap}
+@media (max-width:640px){
+  .frow{grid-template-columns:130px 1fr 50px;gap:8px}
+  .why dl{grid-template-columns:1fr}
+  .why dt{padding-top:8px}
+}
+</style>
+<div class="wrap">
+  <header class="masthead">
+    <div class="brand">
+      <h1>Specification V3</h1>
+      <div class="sub">2026-08-19 · NIFTY 500 · long + short · 1–5 sessions</div>
+    </div>
+    <div class="chips">
+      <span class="chip caution">Selective (score -1 of −5…+5; ≥+2 aggressive, ≤−2 defensive, otherwise selective)</span>
+      <span class="chip">4R minimum</span>
+      <span class="chip">stop 0.5–1.5%</span>
+      <span class="chip">ARCHIVE (NSE EOD)</span>
+    </div>
+    <div class="regime-detail">Regime inputs: NIFTY trend -1 · India VIX +1 · Dealer gamma -1 · Global risk +1 · Breadth -1</div>
+  </header>
+
+  <section>
+    <h2>Selectivity</h2>
+    <p class="lede">The rejections are the product. V3 targets roughly
+      15 setups a month, so the funnel is meant to be brutal.</p>
+    <div class="funnel"><div class="frow"><span class="lbl">NIFTY 500 liquid</span><span class="bar"><i style="width:100.0%"></i></span><span class="val">474</span></div><div class="frow"><span class="lbl">Showing a V3 setup</span><span class="bar"><i style="width:5.9%"></i></span><span class="val">28</span></div><div class="frow"><span class="lbl">Proved a 60m/120m carry setup</span><span class="bar"><i style="width:5.3%"></i></span><span class="val">25</span></div><div class="frow"><span class="lbl">Cleared the quality floor</span><span class="bar"><i style="width:0.6%"></i></span><span class="val">0</span></div><div class="frow final"><span class="lbl">Shown today</span><span class="bar"><i style="width:0.6%"></i></span><span class="val">0</span></div></div>
+    <p class="lede">Quality floor <b>76/100</b> — selective regime (aggressive 72 · selective 76 · defensive 80); calibrated against a live scan of 269 candidates whose scores ran 55–81, median 65.</p>
+    <p class="lede">Four hard filters may reject: 4R feasibility, stop distance, liquidity and technical validity.</p>
+  </section>
+
+  <section>
+    <h2>Today's setups</h2>
+    <p class="lede">0 cleared the quality floor; the best
+      0 are shown.</p>
+    <div class="empty"><div class="h">Nothing qualified today.</div><div class="p">V3 targets roughly 15 setups a month, not a daily list. Most sessions produce none, and the specification is explicit that the 4R and stop-distance requirements never loosen to fill a quota.</div></div>
+  </section>
+
+  <section><h2>Which filter was binding</h2><div class='scroller'><table><thead><tr><th>Hard filter</th><th style='text-align:right'>n</th></tr></thead><tbody><tr><td>technical validity</td><td class='num'>3</td></tr></tbody></table></div></section>
+  <section><h2>Watch</h2><p class='lede'>Cleared the hard filters or came close, but not today's best. Worth checking tomorrow.</p><div class='scroller'><table><thead><tr><th>Symbol</th><th>Dir</th><th>Why not</th></tr></thead><tbody><tr><td style='font-family:var(--mono)'>THELEELA</td><td>long</td><td>score 75.9 below 76</td></tr><tr><td style='font-family:var(--mono)'>JSL</td><td>short</td><td>score 62.7 below 76</td></tr><tr><td style='font-family:var(--mono)'>ZEEL</td><td>long</td><td>score 62.6 below 76</td></tr><tr><td style='font-family:var(--mono)'>IRCTC</td><td>short</td><td>score 61.7 below 76</td></tr><tr><td style='font-family:var(--mono)'>MCX</td><td>short</td><td>score 61.0 below 76</td></tr><tr><td style='font-family:var(--mono)'>CPPLUS</td><td>long</td><td>score 58.3 below 76</td></tr><tr><td style='font-family:var(--mono)'>BRITANNIA</td><td>short</td><td>score 57.6 below 76</td></tr><tr><td style='font-family:var(--mono)'>ATUL</td><td>short</td><td>score 57.5 below 76</td></tr><tr><td style='font-family:var(--mono)'>ZYDUSLIFE</td><td>short</td><td>score 56.9 below 76</td></tr><tr><td style='font-family:var(--mono)'>TATAPOWER</td><td>short</td><td>score 56.6 below 76</td></tr><tr><td style='font-family:var(--mono)'>SARDAEN</td><td>long</td><td>score 56.3 below 76</td></tr><tr><td style='font-family:var(--mono)'>GROWW</td><td>long</td><td>score 53.6 below 76</td></tr><tr><td style='font-family:var(--mono)'>PFOCUS</td><td>long</td><td>score 52.2 below 76</td></tr><tr><td style='font-family:var(--mono)'>DCMSHRIRAM</td><td>long</td><td>score nan below 76</td></tr><tr><td style='font-family:var(--mono)'>YESBANK</td><td>long</td><td>score 51.7 below 76</td></tr></tbody></table></div></section>
+
+  <div class="note">
+    <b>Decision support, not execution.</b> Every level here is a setup for your own
+    judgement — never an instruction to buy or sell. This system holds no credentials that
+    can trade and contains no order-placement code.
+  </div>
+
+  <footer>
+    <span>Right market → right sector → right stock → right time → right risk/reward</span>
+    <span class="num">Generated 19 Aug 2026 14:09</span>
+  </footer>
+</div>
