@@ -357,6 +357,66 @@ def v3(
     console.print(f"[green]Written:[/] {write_v3_html(scan)}")
 
 
+def _last_session():
+    from .data import nse_archive
+
+    return nse_archive.last_trading_day() or date.today()
+
+
+@app.command("pullback")
+def pullback(
+    on: str = typer.Option(None, "--date", help="Trading date (YYYY-MM-DD), default latest."),
+    limit: int = typer.Option(0, help="Cap the universe. 0 = all NIFTY 200 names."),
+    entry_tf: str = typer.Option("5m", "--entry-tf", help="Entry timeframe. 3m is unavailable."),
+    max_risk: float = typer.Option(0.7, "--max-risk", help="Max stop distance, percent."),
+    min_risk: float = typer.Option(
+        0.0, "--min-risk",
+        help="Min stop distance, percent. 0 = as specified; the measurement suggests a floor.",
+    ),
+    rr: float = typer.Option(3.0, "--rr", help="Reward-to-risk target."),
+) -> None:
+    """Intraday HMA/Bollinger pullback scan across the NIFTY 200.
+
+    Separate from the V3 engine: different universe, timeframe, geometry and risk cap.
+    Its edge is not established — see docs/spec-hma-pullback.md.
+    """
+    from .engines.hma_pullback import PullbackSettings, scan_pullback
+    from .report.pullback_report import render_scan, write_brief
+
+    cfg = PullbackSettings(
+        entry_interval=entry_tf, max_risk_pct=max_risk, min_risk_pct=min_risk,
+        reward_risk=rr,
+    )
+    target = date.fromisoformat(on) if on else None
+    signals = scan_pullback(target, max_symbols=limit, cfg=cfg)
+    as_of = str(target) if target else str(_last_session())
+    console.print(render_scan(signals, as_of, cfg))
+    console.print(f"[green]Written:[/] {write_brief(signals, as_of, cfg)}")
+
+
+@app.command("pullback-backtest")
+def pullback_backtest(
+    symbols: int = typer.Option(40, help="How many NIFTY 200 names to replay. 0 = all."),
+    entry_tf: str = typer.Option("5m", "--entry-tf", help="Entry timeframe. 3m is unavailable."),
+    max_risk: float = typer.Option(0.7, "--max-risk", help="Max stop distance, percent."),
+    min_risk: float = typer.Option(
+        0.0, "--min-risk",
+        help="Min stop distance, percent. 0 = as specified; the measurement suggests a floor.",
+    ),
+    rr: float = typer.Option(3.0, "--rr", help="Reward-to-risk target."),
+) -> None:
+    """Replay the intraday pullback strategy over the available 30m/5m history."""
+    from .engines.hma_pullback import PullbackSettings, backtest_pullback
+    from .report.pullback_report import render_backtest
+
+    cfg = PullbackSettings(
+        entry_interval=entry_tf, max_risk_pct=max_risk, min_risk_pct=min_risk,
+        reward_risk=rr,
+    )
+    result = backtest_pullback(max_symbols=symbols, cfg=cfg)
+    console.print(render_backtest(result, cfg))
+
+
 @app.command("catalyst-backfill")
 def catalyst_backfill(
     days: int = typer.Option(90, help="How many days back to collect."),

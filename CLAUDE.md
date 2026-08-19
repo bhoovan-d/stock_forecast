@@ -29,6 +29,15 @@ Three timeframes, three jobs. A candidate must clear all three.
 | `report/v3_website.py` | the published page |
 | `v3_backtest.py` | replay on real 15m triggers |
 | `ui/` | local control panel (`asymmetry ui`), loopback only |
+| `engines/hma_pullback.py` | **separate strategy** — intraday HMA/BB pullback, NIFTY 200 |
+
+`engines/hma_pullback.py` and `report/pullback_report.py` are the owner's intraday setup
+(30m anchor → 5m pullback, 3R, 0.7% cap). They share **nothing** with V3 and must not: the
+geometry differs on every axis. Measured 20 Aug 2026 at **-1.35R net** and it is not
+tradeable as specified — the stop is the entry candle's own low, which came out at a median
+0.169% against a 0.7% cap, so round-trip costs are a full 1R per trade. `docs/
+spec-hma-pullback.md`. The lesson generalises: **a stop floor is not optional.** V3 has one
+at 0.5% for exactly this reason and this strategy was specified without one.
 
 `engines/spec_engine.py`, `engines/selection.py` and `report/brief.py` are the older
 Engineer-Brief and daily-screen engines. They are separate, keep their own gates
