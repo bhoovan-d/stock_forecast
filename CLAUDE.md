@@ -252,7 +252,11 @@ Each of these shipped or nearly shipped. They are cheap to reintroduce.
     above bullish and below bearish. Every other percentile in the scan is mirrored for a
     short and this one was not, so a SHORT with a *bullish* catalyst scored higher for it.
     Anything fed to `quality_score` must be expressed in the traded direction first.
-12. **Publishing a threshold without its derivation.** Every watch-list row read "below 72"
+12. **A setting nothing reads.** `base_breakout_*` sat in `config.py` for weeks while
+    `detect_base_breakout` used hardcoded defaults — tuning them did nothing, silently.
+    Resolve settings *inside* the function body, never as a default argument: defaults bind
+    at import and `settings` is a singleton, which is trap 4 wearing a different hat.
+13. **Publishing a threshold without its derivation.** Every watch-list row read "below 72"
     while 72 existed only in a code comment. If a number decides what the reader sees, it
     ships with where it came from — `V3Scan.threshold_basis` / `regime_detail` carry this.
 

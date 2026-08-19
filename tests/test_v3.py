@@ -539,3 +539,52 @@ def test_a_post_close_setup_points_at_the_next_session():
 
     assert _next_session(date(2026, 8, 14)) == date(2026, 8, 17)   # Friday -> Monday
     assert _next_session(date(2026, 8, 17)) == date(2026, 8, 18)
+
+
+# ── The base-breakout thresholds are wired to config ──────────────────────────
+
+
+def test_base_breakout_thresholds_come_from_settings(monkeypatch):
+    """Until 19 Aug 2026 these three settings existed and nothing read them.
+
+    `detect_base_breakout` had them hardcoded and `detect_setup` passed no overrides, so
+    anyone "tuning" `base_breakout_min_volume_mult` was changing a value the engine never
+    consulted. Each assertion below flips one setting and requires the verdict to follow.
+    """
+    from asymmetry.engines.setups import detect_base_breakout
+
+    # A 2%-deep base of 8 bars, then a breakout bar closing above it on 3x volume.
+    closes = [100.0] * 30 + [100, 101, 100, 101, 100, 101, 100, 101] + [104.0]
+    frame = bars(closes, spread=0.001)
+    frame.loc[frame.index[-1], "volume"] = 3_000_000.0
+
+    assert detect_base_breakout(frame, direction="long").found
+
+    # Demanding 5x volume when only 3x arrived must refuse it.
+    monkeypatch.setattr(settings, "base_breakout_min_volume_mult", 5.0)
+    signal = detect_base_breakout(frame, direction="long")
+    assert not signal.found
+    assert "volume" in signal.note
+    monkeypatch.setattr(settings, "base_breakout_min_volume_mult", 2.0)
+
+    # Demanding a base tighter than the one present must refuse it.
+    monkeypatch.setattr(settings, "base_breakout_max_depth_pct", 0.05)
+    signal = detect_base_breakout(frame, direction="long")
+    assert not signal.found
+    assert "not a base" in signal.note
+
+
+def test_settings_are_read_per_call_not_bound_at_import(monkeypatch):
+    """`settings` is a module-level singleton, so a default argument would freeze these at
+    import and ignore later changes — the same shape as the expired-token trap. Resolving
+    inside the function body is what makes a runtime change take effect."""
+    from asymmetry.engines.setups import detect_base_breakout
+
+    closes = [100.0] * 30 + [100, 101, 100, 101, 100, 101, 100, 101] + [104.0]
+    frame = bars(closes, spread=0.001)
+    frame.loc[frame.index[-1], "volume"] = 3_000_000.0
+
+    before = detect_base_breakout(frame, direction="long").found
+    monkeypatch.setattr(settings, "base_breakout_min_volume_mult", 99.0)
+    after = detect_base_breakout(frame, direction="long").found
+    assert before and not after

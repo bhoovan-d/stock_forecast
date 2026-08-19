@@ -96,13 +96,19 @@ Worth stating, because these are the obvious things you might assume are in ther
 have never been varied, so the setup's measured performance is the performance of *one
 untested parameter set*, not of the best version of this idea.
 
-### A live trap
+### The settings are now wired (19 Aug 2026)
 
-`config.py` defines `base_breakout_window`, `base_breakout_max_depth_pct` and
-`base_breakout_min_volume_mult` — and **nothing reads them.** `detect_base_breakout` uses
-hardcoded defaults and `detect_setup` passes no overrides. Changing those settings today has
-no effect whatsoever. They should either be wired up or deleted; leaving them is an
-invitation to "tune" a parameter that is not connected.
+They were not. `config.py` defined `base_breakout_window`,
+`base_breakout_max_depth_pct` and `base_breakout_min_volume_mult`, and **nothing read
+them** — the detector had the values hardcoded, so tuning the config changed nothing.
+
+They are resolved inside the function body rather than as default arguments: a default
+binds once at import and `settings` is a module-level singleton, so `base_window: int =
+settings.x` would freeze the value at import time and silently ignore later changes. That
+is the same trap that made `upstox_auth` verify against an expired token.
+
+Verified against real stored data — `min_volume_mult` at 1.2 / 2.0 / 6.0 yields 7 / 6 / 5
+base-breakout candidates across the NIFTY 500 on 14 Aug 2026.
 
 ## What it has actually done
 

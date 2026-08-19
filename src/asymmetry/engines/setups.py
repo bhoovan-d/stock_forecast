@@ -36,6 +36,7 @@ from dataclasses import dataclass
 import numpy as np
 import pandas as pd
 
+from ..config import settings
 from ..spec import SetupType
 from .indicators import atr
 from .structure import find_pivots
@@ -251,9 +252,9 @@ def detect_base_breakout(
     frame: pd.DataFrame,
     *,
     direction: str = "long",
-    base_window: int = 8,
-    max_depth_pct: float = 8.0,
-    min_volume_mult: float = 2.0,
+    base_window: int | None = None,
+    max_depth_pct: float | None = None,
+    min_volume_mult: float | None = None,
 ) -> SetupSignal:
     """A tight base, then expansion out of it on a volume surge.
 
@@ -266,6 +267,19 @@ def detect_base_breakout(
     Volume is the discriminator, not the breakout. Price clearing a base is common and
     mostly worthless; price clearing it while volume multiplies is a change of hands.
     """
+    # Resolved here rather than in the signature. A default argument binds once at import,
+    # and `settings` is a module-level singleton — so `base_window: int = settings.x` would
+    # freeze the value at import time and silently ignore any later change, which is the
+    # same trap that made `upstox_auth` verify against an expired token. Until 19 Aug 2026
+    # these three were hardcoded and the config keys were dead: tuning them did nothing.
+    base_window = settings.base_breakout_window if base_window is None else base_window
+    max_depth_pct = (
+        settings.base_breakout_max_depth_pct if max_depth_pct is None else max_depth_pct
+    )
+    min_volume_mult = (
+        settings.base_breakout_min_volume_mult if min_volume_mult is None else min_volume_mult
+    )
+
     long_side = direction == "long"
     if frame is None or len(frame) < base_window + 25:
         return SetupSignal(direction=direction, note="insufficient history")
