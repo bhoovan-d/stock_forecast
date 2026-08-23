@@ -15,14 +15,14 @@ from rich.console import Group
 from rich.table import Table
 from rich.text import Text
 
-from ..config import BRIEF_DIR, settings
+from ..config import BRIEF_DIR
 from ..engines.hma_pullback import PullbackSettings, PullbackSignal
 
 
 def execution_lines(signal: PullbackSignal, cfg: PullbackSettings) -> list[tuple[str, str]]:
     """How to act on one signal, including what invalidates it."""
     reward = abs(signal.target - signal.entry)
-    cost_r = (settings.cost_roundtrip_pct + settings.slippage_pct) / max(signal.risk_pct, 1e-9)
+    cost_r = (cfg.cost_roundtrip_pct + cfg.slippage_pct) / max(signal.risk_pct, 1e-9)
     return [
         (
             "Entry",
@@ -42,7 +42,7 @@ def execution_lines(signal: PullbackSignal, cfg: PullbackSettings) -> list[tuple
         (
             "Cost drag",
             f"~{cost_r:.2f}R of this trade's risk goes on round-trip costs, because "
-            f"{settings.cost_roundtrip_pct + settings.slippage_pct:.2f}% of friction against a "
+            f"{cfg.cost_roundtrip_pct + cfg.slippage_pct:.3f}% of intraday friction against a "
             f"{signal.risk_pct:.2f}% stop is proportionally large. Solving "
             f"p(R-c) = (1-p)(1+c) for the break-even hit rate, that moves it from "
             f"{100 / (cfg.reward_risk + 1):.0f}% to "
@@ -178,8 +178,9 @@ def render_backtest(result, cfg: PullbackSettings) -> Group:
             )
         )
 
-    breakeven = 100.0 / (cfg.reward_risk + 1.0)
+    breakeven = result.break_even_win_rate(cfg.reward_risk)
     win = result.win_rate
+    lo, hi = result.confidence_interval()
     verdict = (
         "[green]above break-even on this sample[/]"
         if win > breakeven + 3
@@ -202,6 +203,7 @@ def render_backtest(result, cfg: PullbackSettings) -> Group:
     summary.add_row("Expectancy per trade", f"{result.expectancy_r:+.3f}R")
     summary.add_row("Mean cost per trade", f"-{np.mean([t.cost_r for t in result.trades]):.3f}R")
     summary.add_row("[bold]Net expectancy[/]", f"[bold]{result.net_expectancy_r:+.3f}R[/]")
+    summary.add_row("95% CI on net", f"[{lo:+.3f}, {hi:+.3f}]")
     summary.add_row("Total", f"{result.total_r:+.1f}R")
 
     parts: list = [summary, Text.from_markup(f"\n{verdict}\n")]

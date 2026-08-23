@@ -209,3 +209,53 @@ def test_strategy_settings_are_independent_of_v3():
     cfg = PullbackSettings()
     assert cfg.reward_risk == 3.0 and settings.min_reward_risk == 4.0
     assert cfg.max_risk_pct == 0.7 and settings.v3_max_stop_pct == 1.5
+
+
+# ── Costs are the strategy's own, at intraday rates ───────────────────────────
+
+
+def test_cost_model_is_intraday_not_delivery():
+    """The error that made the first measurement worthless.
+
+    `settings.cost_roundtrip_pct` (0.12%) bundles delivery STT — 0.1% on *both* sides,
+    which is what V3 pays holding 1-5 sessions. An intraday trade pays 0.025% on the sell
+    side only. Using the delivery figure overstated cost 3.4x, and because cost in R is
+    (cost% / stop%), on a 0.2% stop that is a whole R of pure error.
+    """
+    from asymmetry.config import settings
+    from asymmetry.engines.hma_pullback import _cost_r
+
+    cfg = PullbackSettings()
+    strategy_cost = cfg.cost_roundtrip_pct + cfg.slippage_pct
+    v3_cost = settings.cost_roundtrip_pct + settings.slippage_pct
+
+    assert strategy_cost < v3_cost, "intraday must be cheaper than delivery"
+    assert cfg.cost_roundtrip_pct == pytest.approx(0.050, abs=0.001)
+
+    # Scale-invariant and inversely proportional to the stop: halving the stop doubles it.
+    assert _cost_r(0.20, cfg) == pytest.approx(strategy_cost / 0.20)
+    assert _cost_r(0.10, cfg) == pytest.approx(2 * _cost_r(0.20, cfg))
+    assert _cost_r(0.0, cfg) == 0.0
+
+
+def test_confidence_interval_is_reported_so_noise_is_not_read_as_a_result():
+    """A 3R payoff has a wide per-trade spread. The first write-up quoted a gross
+    expectancy of -0.072R as a finding when its 95% CI comfortably spanned zero."""
+    import numpy as np
+
+    from asymmetry.engines.hma_pullback import PullbackResult, PullbackTrade
+
+    def trade(r):
+        return PullbackTrade(
+            symbol="X", entered_at=pd.Timestamp("2026-08-03 10:00"), entry=100.0,
+            stop=99.8, target=100.6, risk_pct=0.2, outcome="target" if r > 0 else "stop",
+            realised_r=r, cost_r=0.0,
+        )
+
+    # A near-coin-flip sample: the interval must contain zero.
+    result = PullbackResult(trades=[trade(3.0)] * 25 + [trade(-1.0)] * 75)
+    lo, hi = result.confidence_interval()
+    assert lo < 0 < hi
+
+    assert result.break_even_win_rate(3.0) == pytest.approx(25.0)
+    assert result.break_even_win_rate(4.0) == pytest.approx(20.0)

@@ -92,86 +92,89 @@ provider before it means anything.
   On a 0.7% stop that assumption is optimistic, and it is the same flaw already flagged in
   the V3 backtest.
 
-## Results — it loses, and the reason is geometry rather than the pattern
+## Results — RETRACTED AND CORRECTED (20 Aug 2026)
 
-100 NIFTY 200 names, 58 sessions, 874 anchors, **752 trades**.
+**The first version of this section said the strategy loses −1.35R per trade. That was
+wrong and is withdrawn.** The error was mine: the backtest charged **V3's delivery cost**
+to an intraday strategy.
 
-| | |
-| --- | --: |
-| Win rate (resolved) | **21.0%** |
-| Break-even at 3R, before costs | 25.0% |
-| Break-even after costs | **56.9%** |
-| Gross expectancy | **−0.072R** |
-| Mean cost | **−1.276R** |
-| **Net expectancy** | **−1.347R** |
-| Total | −1,013R over 752 trades |
+`settings.cost_roundtrip_pct` (0.12% + 0.05% slippage) is calibrated for V3, which holds
+1–5 sessions and therefore pays delivery STT — **0.1% on both sides**. An intraday trade
+pays **0.025%, sell side only**, and brokerage caps at ₹20 an order instead of scaling with
+turnover:
 
-Two separate problems, and the second is much larger than the first.
+    brokerage  0.013    (Rs 20/order, both sides, multi-lakh position)
+    STT        0.025    (sell side only, intraday)
+    exchange   0.006
+    stamp      0.003    (buy side)
+    GST        0.003
+    ---------------
+    total      0.050 %  round trip
 
-**1. It is below break-even even before costs.** 21% of trades reach 3R; 25% is needed.
-Gross expectancy is −0.07R.
+**Cost was overstated 3.4×.** That error is amplified by this strategy's geometry: cost in R
+is `cost% / stop%`, so at a 0.2% stop every 0.01% of cost error is 0.05R. The headline loss
+was mostly a wrong constant.
 
-**2. The stop is far tighter than the specified cap, so costs are ~1R per trade.** This is
-the finding that matters:
+### What the numbers actually are
 
-| | |
-| --- | --: |
-| specified cap | 0.70% |
-| **median actual stop** | **0.169%** |
-| 10th percentile | 0.075% |
-| smallest | 0.007% |
+100 NIFTY 200 names, 58 sessions, 874 anchors, **752 trades**. Costs at intraday rates,
+shown across a slippage range because slippage is the one input still assumed rather than
+measured:
 
-Only **25 of 752** trades had a stop even in the 0.5–0.7% band. The low of a 5-minute
-candle sits very close to its close, so the R unit is tiny — and 0.17% of round-trip
-friction against a 0.169% stop is **a full 1R**. The transaction cost equals the entire
-amount risked. Break-even rises from 25% to 57%, which no version of this pattern reaches.
-
-Sliced by actual stop distance, the pattern is the same everywhere and only the cost changes:
-
-| stop distance | n | win | gross | cost | net |
+| stop distance | n | gross | net @0.05% | net @0.07% | net @0.10% |
 | --- | --: | --: | --: | --: | --: |
-| 0.0–0.1% | 149 | 21.5% | −0.14R | 2.77R | **−2.91R** |
-| 0.1–0.2% | 306 | 20.4% | −0.12R | 1.21R | −1.33R |
-| 0.2–0.3% | 170 | 21.2% | −0.04R | 0.71R | −0.75R |
-| 0.3–0.5% | 102 | 22.6% | +0.05R | 0.46R | −0.42R |
-| 0.5–0.7% | 25 | 18.8% | +0.20R | 0.30R | −0.11R |
+| 0.0–0.2% | 455 | −0.126R | −0.64R | −0.84R | −1.14R |
+| 0.2–0.3% | 170 | −0.035R | −0.25R | −0.33R | −0.45R |
+| 0.3–0.5% | 102 | +0.046R | −0.09R | −0.15R | −0.23R |
+| 0.5–0.7% | 25 | +0.197R | **+0.11R** | **+0.07R** | +0.02R |
 
-Gross expectancy improves monotonically as the stop widens, and net is negative in every
-bucket.
+The widest-stop bucket is **around break-even to slightly positive**, not the catastrophe
+first reported — though its 95% CI is ±0.57R on 25 trades, so it establishes nothing.
 
-### The missing rule: a stop *floor*
+### The gross result was never significant either
 
-The spec caps risk and sets no minimum. V3 has both, and its reasoning applies here
-verbatim — below a floor "the stop sits inside normal noise and is not an invalidation at
-all". A 0.007% stop is not a thesis about the trade; it is a coin flip that also pays a
-toll.
+| | |
+| --- | --: |
+| Gross expectancy | −0.072R |
+| Standard error | 0.059 |
+| **95% CI** | **[−0.186, +0.043]** |
+| t | −1.22 |
 
-Post-hoc, applying a floor to the same data (so this is fitted, not evidence):
+**The interval contains zero.** Quoting −0.072R as "below break-even before costs" was
+presenting noise as a finding. Win rate is 21.0% (145 of 689 resolved) against 25% needed,
+and that difference is not established at this sample size.
 
-| floor | n | win | gross | net |
-| --- | --: | --: | --: | --: |
-| none | 752 | 21.0% | −0.072R | −1.347R |
-| 0.2% | 297 | 21.5% | +0.012R | −0.578R |
-| 0.3% | 127 | 22.0% | +0.076R | −0.355R |
-| 0.4% | 58 | 26.8% | +0.279R | −0.075R |
+### A second methodological fault
 
-A floor turns gross expectancy positive and still does not reach profitability net of
-costs, on a sample that shrinks to 58 trades. `min_risk_pct` exists for experimenting; it
-defaults to 0.0 so the scanner stays faithful to the specification as written.
+The single aggregate figure was a **mean of ratios**, which over-weights degenerate trades.
+The smallest 10% of stops contributed **28%** of all cost-R, and the smallest half
+contributed **74%**. At the median stop of 0.169%, risking ₹5,000 implies a **₹29.6 lakh
+position** — not a trade this account can take at all. Those rows should never have been in
+a headline average. Per-bucket figures are the honest summary and are what the table above
+reports.
 
-### What would have to change for this to work
+### What actually survives
 
-The three are related, and none is a tweak:
+- **Nothing is established about this strategy's edge, in either direction.** The correct
+  verdict is *inconclusive*, not *it loses*.
+- **The structural point stands**: cost in R is inversely proportional to stop distance, so
+  tight stops are disproportionately expensive. That is arithmetic, and it is why the
+  0.0–0.2% bucket is bad at any plausible cost.
+- **A stop floor is still worth having**, for the reason V3 has one: below it the stop sits
+  inside noise. But the case now rests on the geometry, not on the retracted loss figure.
 
-1. **A much wider stop** — structural (below the swing, or an ATR multiple) rather than the
-   entry candle's own low, so 1R is large enough that costs are a small fraction of it.
-2. **Materially lower costs.** At these stop distances, cost is the strategy.
-3. **A higher hit rate**, which the 3R target makes hard: 21% observed against 25% needed
-   before costs.
+### What would settle it
 
-### Caveats
+1. **Measure your real slippage.** It is the only input still assumed. Across the plausible
+   range the widest-stop bucket moves from +0.11R to +0.02R — that is the whole answer.
+2. **More sample at usable stop distances.** 25 trades in the 0.5–0.7% bucket is the
+   cohort that matters and it is far too small.
+3. **A structural stop** (below the swing, or an ATR multiple) rather than the entry
+   candle's low, which would put most trades in the range where costs are tolerable.
+
+### Caveats that were correct the first time
 
 - 58 sessions, one market period, 100 of the 200 names.
 - 5-minute entries; 3-minute could not be tested (no data).
 - Long only, as specified.
-- Stop fills are assumed exact, which flatters the result rather than harming it.
+- Stop fills assumed exact, which flatters the result.

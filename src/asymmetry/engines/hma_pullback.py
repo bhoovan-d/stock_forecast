@@ -42,10 +42,6 @@ import numpy as np
 import pandas as pd
 from loguru import logger
 
-from ..config import settings
-
-# NSE session bounds are already defined for the V3 path; reuse rather than restate.
-from ..data.yahoo import SESSION_CLOSE
 
 
 @dataclass(frozen=True)
@@ -86,6 +82,27 @@ class PullbackSettings:
     # experiment. V3 learned the same lesson and carries min_stop_pct = 0.5 for it.
     min_risk_pct: float = 0.0
     square_off_at_close: bool = True
+
+    # ── Costs: intraday, not delivery ─────────────────────────────────────────
+    # These are the strategy's own and must not be taken from `settings`. That constant
+    # (0.12% + 0.05% slippage) is calibrated for V3, which holds 1-5 sessions and therefore
+    # pays **delivery** STT — 0.1% on both sides. An intraday trade pays 0.025% on the sell
+    # side only, and brokerage caps at Rs20 an order rather than scaling with turnover:
+    #
+    #     brokerage  0.013   (Rs20/order both sides on a multi-lakh position)
+    #     STT        0.025   (sell side only, intraday)
+    #     exchange   0.006
+    #     stamp      0.003   (buy side)
+    #     GST        0.003
+    #     ---------------
+    #     total      0.050 % round trip
+    #
+    # Using the delivery figure here overstated cost by 3.4x. That error is amplified by
+    # this strategy's geometry: cost expressed in R is (cost% / stop%), so at a 0.2% stop
+    # every 0.01% of cost error is 0.05R. It produced a headline loss that was mostly the
+    # wrong constant.
+    cost_roundtrip_pct: float = 0.050
+    slippage_pct: float = 0.020
 
 
 @dataclass
@@ -358,24 +375,31 @@ class PullbackResult:
     def total_r(self) -> float:
         return float(sum(t.net_r for t in self.trades))
 
-    @property
-    def break_even_win_rate(self) -> float:
-        """At 3R with a 1R loss, break-even before costs is 1/(3+1) = 25%."""
-        return 100.0 / (settings.min_reward_risk_pullback + 1.0) if hasattr(
-            settings, "min_reward_risk_pullback"
-        ) else 25.0
+    def break_even_win_rate(self, reward_risk: float) -> float:
+        """Before costs, break-even at R:1 is 1/(R+1). Takes the ratio rather than reading
+        a setting that never existed."""
+        return 100.0 / (reward_risk + 1.0)
+
+    def confidence_interval(self) -> tuple[float, float]:
+        """95% CI on net expectancy. Reported because a 3R payoff has a large per-trade
+        spread: a few hundred trades can show a plausible-looking mean that is noise."""
+        if len(self.trades) < 2:
+            return (float("nan"), float("nan"))
+        nets = np.array([t.net_r for t in self.trades])
+        margin = 1.96 * nets.std(ddof=1) / np.sqrt(len(nets))
+        return (float(nets.mean() - margin), float(nets.mean() + margin))
 
 
-def _cost_r(risk_pct: float) -> float:
+def _cost_r(risk_pct: float, cfg: PullbackSettings) -> float:
     """Round-trip cost expressed in R for *this* trade's stop distance.
 
-    A fixed cost-in-R constant would be wrong here. The strategy caps risk at 0.7%, so the
-    same 0.17% of round-trip friction is 0.24R — nearly a quarter of every unit risked, and
-    materially worse than the ~0.17R V3 carries on a 1% stop.
+    Charged per trade rather than as a fixed R constant, because cost in R is
+    (cost% / stop%) and this strategy's stop varies from 0.01% to 0.7%. It also uses the
+    strategy's **intraday** rates, not V3's delivery ones — see `PullbackSettings`.
     """
     if risk_pct <= 0:
         return 0.0
-    return (settings.cost_roundtrip_pct + settings.slippage_pct) / risk_pct
+    return (cfg.cost_roundtrip_pct + cfg.slippage_pct) / risk_pct
 
 
 def resolve_trade(
@@ -396,7 +420,7 @@ def resolve_trade(
     trade = PullbackTrade(
         symbol=signal.symbol, entered_at=signal.entry_at, entry=signal.entry,
         stop=signal.stop, target=signal.target, risk_pct=signal.risk_pct,
-        cost_r=_cost_r(signal.risk_pct),
+        cost_r=_cost_r(signal.risk_pct, cfg),
     )
     if risk <= 0:
         return None

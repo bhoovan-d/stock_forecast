@@ -33,11 +33,18 @@ Three timeframes, three jobs. A candidate must clear all three.
 
 `engines/hma_pullback.py` and `report/pullback_report.py` are the owner's intraday setup
 (30m anchor → 5m pullback, 3R, 0.7% cap). They share **nothing** with V3 and must not: the
-geometry differs on every axis. Measured 20 Aug 2026 at **-1.35R net** and it is not
-tradeable as specified — the stop is the entry candle's own low, which came out at a median
-0.169% against a 0.7% cap, so round-trip costs are a full 1R per trade. `docs/
-spec-hma-pullback.md`. The lesson generalises: **a stop floor is not optional.** V3 has one
-at 0.5% for exactly this reason and this strategy was specified without one.
+geometry differs on every axis — **including costs**. The first measurement reported
+-1.35R net and was **retracted**: it charged V3's *delivery* cost (STT 0.1% both sides) to
+an *intraday* strategy that pays 0.025% sell-side only, overstating cost 3.4x. Because cost
+in R is `cost% / stop%`, and this strategy's stop is ~0.2%, that error alone was most of the
+headline. Corrected, the result is **inconclusive, not negative**: gross -0.072R with a 95%
+CI of [-0.186, +0.043], and the widest-stop cohort around break-even. `docs/
+spec-hma-pullback.md`.
+
+Two lessons, both general. **A cost constant is calibrated for a holding period** — never
+reuse V3's across strategies. And **cost in R scales inversely with stop distance**, so a
+tight-stop strategy is exquisitely sensitive to it; report a slippage range rather than a
+point estimate, and never headline a mean-of-ratios when stop sizes vary by 100x.
 
 `engines/spec_engine.py`, `engines/selection.py` and `report/brief.py` are the older
 Engineer-Brief and daily-screen engines. They are separate, keep their own gates
