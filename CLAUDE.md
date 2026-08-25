@@ -30,6 +30,7 @@ Three timeframes, three jobs. A candidate must clear all three.
 | `v3_backtest.py` | replay on real 15m triggers |
 | `ui/` | local control panel (`asymmetry ui`), loopback only |
 | `engines/hma_pullback.py` | **separate strategy** — intraday HMA/BB pullback, NIFTY 200 |
+| `engines/trident.py` | **separate strategy** — kill-zone FVG reclaim at 20R, NIFTY 200 |
 
 `engines/hma_pullback.py` and `report/pullback_report.py` are the owner's intraday setup
 (30m anchor → 5m pullback, 3R, 0.7% cap). They share **nothing** with V3 and must not: the
@@ -45,6 +46,43 @@ Two lessons, both general. **A cost constant is calibrated for a holding period*
 reuse V3's across strategies. And **cost in R scales inversely with stop distance**, so a
 tight-stop strategy is exquisitely sensitive to it; report a slippage range rather than a
 point estimate, and never headline a mean-of-ratios when stop sizes vary by 100x.
+
+`engines/trident.py` and `report/trident_report.py` are a third strategy, transcribed
+26 Aug 2026 from a YouTube interview (TG Capital on Chart Fanatics) at the owner's request.
+30m fair-value-gap → doji reclaim of the 50%, inside a kill zone, long only, **20R**. It
+shares nothing with the other two and must not: **three strategies now means three cost
+constants, three stop rules and three holding periods**, and any constant shared between
+them retunes a deployed engine by accident.
+
+Two things about it are not negotiable in any doc that describes it. **It is the NSE
+adaptation of an FX/gold strategy, not the strategy** — the kill zone had to be remapped to
+the NSE session, the four-colour daily confluence is a reconstruction of an unnamed
+third-party indicator, and the discretionary trailing exit was replaced by a fixed 20R.
+**And the source's 90% win rate at 1:20 is neither confirmed nor refuted here, because this
+data cannot settle it**: ~60 sessions of 30m history against a claimed 8–10 setups a year
+per instrument. Never report a win rate for it without its interval.
+
+Measured 26 Aug 2026 across 200 names and 59 sessions: **22 setups, 20 resolved, 0 wins,
+net −1.40R**. That reads worse than it is. 0-for-20 does **not** exclude break-even — at a
+4.8% break-even rate a system with no edge produces that run 37% of the time — and the
+tight-looking CI on net expectancy is an artefact of observing no wins at all. What it does
+exclude is any true win rate above 13.9%. The useful finding is elsewhere: excursion
+analysis puts the entry within **±0.1R of gross break-even at every target from 1R to 20R**,
+so no target rescues it, and the loss is **costs** — mean 0.486R, because a stop at a doji
+low runs to 0.08% and `cost% / stop%` does the rest. A stop floor would fix that and is
+deliberately absent: the source has no such rule, and inventing one to improve a measurement
+of somebody else's strategy measures the invention.
+
+Re-measured at **4R** on the owner's request: 20% win rate against a 20% break-even, gross
+**-0.006R** — the entry lands on gross break-even a second time, by a different route — and
+-0.505R net once 0.499R of costs come off. A 0.5% stop floor halves the cost drag and makes
+net *worse*, so the floor is now excluded for a measured reason and not only a faithful one.
+Scaled exits were then swept, because "4R at 80%" is a **different metric** rather than a
+better system: no variant beats the plain fixed target, the break-even stop lifts the hit
+rate to 35% by ejecting the position from winners (trades reaching target halve, 20% -> 10%),
+and lowering the partial trigger *reduces* the win rate here because banking 0.125R cannot
+cover 0.499R of costs. **No exit rule adds edge to an entry that has none.**
+`docs/spec-trident.md`.
 
 `engines/spec_engine.py`, `engines/selection.py` and `report/brief.py` are the older
 Engineer-Brief and daily-screen engines. They are separate, keep their own gates
@@ -286,8 +324,10 @@ uv run asymmetry doctor               # data source health and active tier
 uv run asymmetry backfill --days 400  # EOD history into SQLite
 uv run asymmetry v3 --setup reclaim --setup base-breakout
 uv run asymmetry v3-backtest --symbols 80
+uv run asymmetry trident               # kill-zone FVG scan; empty days are the norm
+uv run asymmetry trident-backtest --symbols 0
 uv run asymmetry site                 # rebuild public/
-uv run pytest -q                      # 145 passed, 1 skipped
+uv run pytest -q                      # 220 passed, 1 skipped
 ```
 
 CI (`.github/workflows/daily-brief.yml`) runs weekdays 19:00 IST — NSE closes 15:30 and the

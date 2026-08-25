@@ -1,0 +1,105 @@
+name: Trident forward record
+
+# Collects the trident strategy forward, one session at a time.
+#
+# Why this exists at all: the replay in docs/spec-trident.md is capped at ~60 sessions of
+# 30-minute history — the hard upstream limit — against a pattern that fires roughly a third
+# of a time per session across the whole NIFTY 200. That sample cannot separate a real hit
+# rate from noise, and re-running history will never fix it because the history does not
+# exist. Forward collection is the only remedy, and it only works if it runs every day
+# without anyone remembering to.
+#
+# Deliberately a SEPARATE workflow from daily-brief.yml rather than another step inside it.
+# The brief is the deployed product; this is an experiment on an unproven strategy. A
+# failure here must not cost a day of the brief, and a change here must not require touching
+# the file that publishes the site.
+#
+# Timing: NSE closes 15:30 IST. This runs at 14:00 UTC (19:30 IST), half an hour after the
+# brief, so the two do not compete for Yahoo's rate limit — the pacing and backoff in the
+# HTTP client are mandatory here, not an optimisation.
+
+on:
+  schedule:
+    - cron: "0 14 * * 1-5"   # 19:30 IST, weekdays
+  workflow_dispatch:
+    inputs:
+      on_date:
+        description: "Trading date to collect (YYYY-MM-DD). Blank = latest session."
+        type: string
+        required: false
+      settle_only:
+        description: "Skip the scan; only mark open records against fresh bars"
+        type: boolean
+        default: false
+
+concurrency:
+  group: trident-watch
+  cancel-in-progress: false
+
+permissions:
+  contents: write   # to commit the forward record back
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e .
+
+      # Only the Yahoo disk cache, under its own key namespace. This job needs no SQLite
+      # store: the trident scan reads 30m and daily bars from Yahoo and resolves the session
+      # date from the NSE archive, so none of the brief's bhavcopy backfill applies.
+      - name: Restore chart cache
+        uses: actions/cache@v4
+        with:
+          path: data/cache
+          key: trident-cache-${{ github.run_id }}
+          restore-keys: |
+            trident-cache-
+
+      - name: Scan, record and settle
+        run: |
+          ARGS="--rr 4"
+          if [ -n "${{ github.event.inputs.on_date }}" ]; then
+            ARGS="$ARGS --date ${{ github.event.inputs.on_date }}"
+          fi
+          if [ "${{ github.event.inputs.settle_only }}" = "true" ]; then
+            ARGS="$ARGS --settle-only"
+          fi
+          python -m asymmetry.cli trident-watch $ARGS
+
+      - name: Commit the record
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/trident_watch.jsonl
+          if git diff --cached --quiet; then
+            # The normal outcome. Most sessions produce no setup and settle nothing, and a
+            # market holiday produces neither. An empty day is not a failure.
+            echo "Nothing new to record."
+            exit 0
+          fi
+          git commit -m "Trident forward record $(date -u +%Y-%m-%d)"
+          # Rebase before pushing: the daily brief commits to the same branch half an hour
+          # earlier and a manual commit may have landed in between.
+          git pull --rebase --autostash origin main
+          git push origin HEAD:main
+
+      - name: Upload the record as an artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: trident-watch-${{ github.run_number }}
+          path: data/trident_watch.jsonl
+          retention-days: 90
+          if-no-files-found: warn

@@ -417,6 +417,127 @@ def pullback_backtest(
     console.print(render_backtest(result, cfg))
 
 
+@app.command("trident")
+def trident(
+    on: str = typer.Option(None, "--date", help="Trading date (YYYY-MM-DD), default latest."),
+    limit: int = typer.Option(0, help="Cap the universe. 0 = all NIFTY 200 names."),
+    killzone_end: str = typer.Option(
+        "12:45", "--killzone-end",
+        help="End of the entry window, HH:MM. The NSE mapping of London 06:30 NY is a "
+             "structural analogy, not a measured choice.",
+    ),
+    rr: float = typer.Option(20.0, "--rr", help="Reward-to-risk target."),
+    strong_daily: bool = typer.Option(
+        True, "--strong-daily/--any-daily",
+        help="Require the daily candle to be printing 'green'. That indicator is a "
+             "reconstruction of an unnamed third-party script, so it can be switched off.",
+    ),
+    feasible_only: bool = typer.Option(
+        False, "--feasible-only",
+        help="Refuse setups whose 20R target exceeds ATR-implied travel. Not in the source.",
+    ),
+) -> None:
+    """Kill-zone fair-value-gap reclaim ("trident") scan across the NIFTY 200.
+
+    Separate from V3 and from the HMA pullback: different universe window, geometry, holding
+    period and cost constant. Its edge is untested — see docs/spec-trident.md.
+    """
+    from datetime import time as _time
+
+    from .engines.trident import TridentSettings, scan_trident
+    from .report.trident_report import render_scan, write_brief
+
+    hour, minute = (int(part) for part in killzone_end.split(":"))
+    cfg = TridentSettings(
+        killzone_end=_time(hour, minute), reward_risk=rr,
+        require_strong_daily=strong_daily, require_feasible_target=feasible_only,
+    )
+    target = date.fromisoformat(on) if on else None
+    signals = scan_trident(target, max_symbols=limit, cfg=cfg)
+    as_of = str(target) if target else str(_last_session())
+    console.print(render_scan(signals, as_of, cfg))
+    console.print(f"[green]Written:[/] {write_brief(signals, as_of, cfg)}")
+
+
+@app.command("trident-backtest")
+def trident_backtest(
+    symbols: int = typer.Option(40, help="How many NIFTY 200 names to replay. 0 = all."),
+    killzone_end: str = typer.Option("12:45", "--killzone-end", help="Entry window end, HH:MM."),
+    rr: float = typer.Option(20.0, "--rr", help="Reward-to-risk target."),
+    hold: int = typer.Option(
+        60, "--hold",
+        help="Sessions before an unresolved position is marked out. The source has no time "
+             "stop; a mechanical replay needs one.",
+    ),
+    strong_daily: bool = typer.Option(True, "--strong-daily/--any-daily"),
+) -> None:
+    """Replay the trident over the available 30m history — roughly 60 sessions.
+
+    That cap is the whole problem with measuring this strategy: at the source's own rate of
+    8-10 setups a year per instrument, no sample this window can produce will separate a 90%
+    win rate from a coin flip.
+    """
+    from datetime import time as _time
+
+    from .engines.trident import TridentSettings, backtest_trident
+    from .report.trident_report import render_backtest
+
+    hour, minute = (int(part) for part in killzone_end.split(":"))
+    cfg = TridentSettings(
+        killzone_end=_time(hour, minute), reward_risk=rr, max_hold_sessions=hold,
+        require_strong_daily=strong_daily,
+    )
+    result = backtest_trident(max_symbols=symbols, cfg=cfg)
+    console.print(render_backtest(result, cfg))
+
+
+@app.command("trident-watch")
+def trident_watch(
+    on: str = typer.Option(None, "--date", help="Trading date (YYYY-MM-DD), default latest."),
+    limit: int = typer.Option(0, help="Cap the universe. 0 = all NIFTY 200 names."),
+    rr: float = typer.Option(
+        4.0, "--rr",
+        help="Reward-to-risk for setups recorded by THIS run. Existing records keep the "
+             "ratio they were flagged with — a target you can move afterwards is not a "
+             "target.",
+    ),
+    killzone_end: str = typer.Option("12:45", "--killzone-end", help="Entry window end, HH:MM."),
+    scan: bool = typer.Option(
+        True, "--scan/--settle-only",
+        help="--settle-only skips the scan and just marks open records against fresh bars.",
+    ),
+) -> None:
+    """Collect the trident forward — scan the session, record setups, settle open ones.
+
+    This is the only honest way left to test this strategy. The replay in
+    docs/spec-trident.md is capped at ~60 sessions of 30m history against a pattern firing
+    roughly a third of a time per session, which cannot separate a real hit rate from noise.
+    Run this after the close on each trading day and let the record accumulate.
+    """
+    from datetime import time as _time
+
+    from . import trident_journal
+    from .engines.trident import TridentSettings, scan_trident
+    from .report.trident_report import render_watch
+
+    hour, minute = (int(part) for part in killzone_end.split(":"))
+    cfg = TridentSettings(reward_risk=rr, killzone_end=_time(hour, minute))
+
+    if scan:
+        target = date.fromisoformat(on) if on else None
+        signals = scan_trident(target, max_symbols=limit, cfg=cfg)
+        added = trident_journal.record(signals, cfg)
+        console.print(f"[green]Scanned:[/] {len(signals)} qualifying, {added} newly recorded")
+
+    changed = trident_journal.settle(cfg)
+    if changed:
+        console.print(f"[green]Settled:[/] {changed} record(s) reached a stop or target")
+
+    records = trident_journal.load()
+    console.print(render_watch(records, trident_journal.as_result(records), cfg))
+    console.print(f"[dim]Record: {trident_journal.WATCH_PATH}[/]")
+
+
 @app.command("catalyst-backfill")
 def catalyst_backfill(
     days: int = typer.Option(90, help="How many days back to collect."),
