@@ -48,6 +48,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import date, datetime, time
+from typing import NamedTuple
 
 import numpy as np
 import pandas as pd
@@ -585,6 +586,12 @@ class TridentResult:
     gaps_found: int = 0
     setups_found: int = 0
     rejections: dict[str, int] = field(default_factory=dict)
+    # Symbols whose data could not be fetched. Counted rather than silently skipped: a
+    # transient Yahoo failure removes a name and its setups from the sample, so two runs of
+    # the same command over the same window can disagree. Observed 26 Aug 2026, when one
+    # failed fetch moved the trade count from 22 to 21 and the report said only "199
+    # symbols" — a shrinking denominator that looked like a stable measurement.
+    fetch_failures: int = 0
 
     @property
     def resolved(self) -> list[TridentTrade]:
@@ -680,14 +687,14 @@ def resolve_trade(
     Two rules borrowed from the V3 backtest because they are what stop a backtest inventing
     an edge, not because the engines are shared:
 
-    * **A bar touching both stop and target books a loss.** The sequence inside a bar is
-      unknown and resolving it favourably is the classic way to manufacture a win rate. At
-      20R this bites less often than usual — a bar spanning both moved twenty stop widths —
-      but the rule is applied anyway.
+    * **A bar touching both stop and target books a loss.** The order of events inside a bar
+      is unknown, and resolving it favourably is the classic way a backtest manufactures a
+      win rate. At 20R this bites less often than usual — a bar spanning both moved twenty
+      stop widths — but the rule is applied anyway.
     * **Gaps are honoured at the open, not at the level.** If a session opens below the stop
-      the trade books the *actual* loss, which is worse than -1R. This is the single most
-      important correction for a multi-week hold on one stock: leaving it out would quietly
-      cap every loss at exactly 1R while leaving the 20R upside intact.
+      the trade books the *actual* loss, which is worse than -1R. This matters enormously
+      here: without it every loss would be capped at exactly 1R while the 20R upside stayed
+      intact, which is a free insurance policy no real position has.
     """
     if not signal.found or signal.entry_at is None:
         return None
@@ -702,53 +709,41 @@ def resolve_trade(
         cost_r=_cost_r(signal.risk_pct, cfg),
     )
 
-    # The rest of the entry session, on the bars the entry was found on.
-    entry_day = signal.entry_at.date()
-    same_day = m30[(m30.index.date == entry_day) & (m30.index > signal.entry_at)]
-    for ts, bar in same_day.iterrows():
-        if float(bar["low"]) <= signal.stop:
-            trade.outcome, trade.realised_r, trade.resolved_at = "stop", -1.0, ts
-            return trade
-        if float(bar["high"]) >= signal.target:
-            trade.outcome, trade.realised_r, trade.resolved_at = (
-                "target", cfg.reward_risk, ts,
-            )
-            return trade
+    bars, markout = _forward_walk(m30, daily, signal.entry_at, cfg.max_hold_sessions)
+    for bar in bars:
+        if bar.session:
+            trade.sessions_held = bar.session
 
-    # Then daily bars. 20R off a sub-1% stop is a multi-week move; resolving it only on the
-    # ~60 sessions of 30m history the feed serves would truncate most trades artificially.
-    forward = daily[daily.index.date > entry_day].head(cfg.max_hold_sessions)
-    for offset, (ts, bar) in enumerate(forward.iterrows(), start=1):
-        trade.sessions_held = offset
-        open_, high, low = float(bar["open"]), float(bar["high"]), float(bar["low"])
-        if open_ <= signal.stop:
+        # The gap checks run first and only on daily bars, where `open_` exists.
+        if bar.open_ is not None and bar.open_ <= signal.stop:
             trade.outcome = "stop"
-            trade.realised_r = (open_ - signal.entry) / risk
-            trade.resolved_at, trade.gapped = ts, True
+            trade.realised_r = (bar.open_ - signal.entry) / risk
+            trade.resolved_at, trade.gapped = bar.ts, True
             return trade
-        if open_ >= signal.target:
+        if bar.open_ is not None and bar.open_ >= signal.target:
             trade.outcome = "target"
-            trade.realised_r = (open_ - signal.entry) / risk
-            trade.resolved_at, trade.gapped = ts, True
+            trade.realised_r = (bar.open_ - signal.entry) / risk
+            trade.resolved_at, trade.gapped = bar.ts, True
             return trade
-        if low <= signal.stop:
-            trade.outcome, trade.realised_r, trade.resolved_at = "stop", -1.0, ts
+
+        if bar.low <= signal.stop:
+            trade.outcome, trade.realised_r, trade.resolved_at = "stop", -1.0, bar.ts
             return trade
-        if high >= signal.target:
+        if bar.high >= signal.target:
             trade.outcome, trade.realised_r, trade.resolved_at = (
-                "target", cfg.reward_risk, ts,
+                "target", cfg.reward_risk, bar.ts,
             )
             return trade
 
-    if len(forward) == 0:
+    if markout is None:
         # Entered too recently for any forward data to exist. Right-censored, and reported
         # as such rather than silently dropped or marked out at the entry price.
         trade.outcome = "open"
         return trade
 
     trade.outcome = "time-stop"
-    trade.realised_r = (float(forward["close"].iloc[-1]) - signal.entry) / risk
-    trade.resolved_at = forward.index[-1]
+    trade.realised_r = (markout - signal.entry) / risk
+    trade.resolved_at = bars[-1].ts if bars else None
     return trade
 
 
@@ -784,9 +779,11 @@ def backtest_trident(
         ysym = yahoo.to_yahoo_symbol(symbol)
         m30 = yahoo.fetch_chart(ysym, range_="60d", interval=cfg.anchor_interval)
         if m30 is None or m30.empty:
+            result.fetch_failures += 1
             continue
         daily = yahoo.fetch_chart(ysym, range_="2y", interval="1d")
         if daily is None or daily.empty:
+            result.fetch_failures += 1
             continue
 
         result.symbols_tested += 1
@@ -890,26 +887,86 @@ class ScaledExit:
     breakeven_after: bool = True
 
 
-def _forward_bars(m30: pd.DataFrame, daily: pd.DataFrame, entry_at: pd.Timestamp,
-                  max_hold_sessions: int):
-    """Every bar after entry, in order: the rest of the entry session, then daily bars.
+def drop_forming_bar(
+    frame: pd.DataFrame, interval_minutes: float, now: pd.Timestamp | None = None
+) -> pd.DataFrame:
+    """Drop the final bar when its window has not closed yet.
 
-    Factored out so the fixed-target and scaled-exit resolvers walk *identically*. Two
-    hand-written loops would eventually disagree about which bars a trade saw, and the
-    comparison between them is the entire point of the scaled resolver.
+    Yahoo returns the bar currently being built. Its high and low only ever widen as the
+    window fills, so anything decided from it is decided on information that is not final.
+
+    In *resolution* that is worse than merely early, and it is the reason this exists: a
+    partial bar that has printed the target but not yet the stop books a **win**, while the
+    same bar completed may touch both — which this codebase books as a **loss**. A forward
+    record is written once, so an early settle converts a loser into a winner permanently.
+    Discovered 26 Aug 2026, when a daily frame ending on an open session resolved two trades
+    off an unfinished bar.
+
+    `now` is injectable so the behaviour can be tested without depending on the clock.
     """
+    if frame is None or frame.empty:
+        return frame
+    if now is None:
+        now = pd.Timestamp.now(tz=frame.index.tz) if frame.index.tz is not None else pd.Timestamp.now()
+    closes_at = frame.index[-1] + pd.Timedelta(minutes=interval_minutes)
+    return frame.iloc[:-1] if now < closes_at else frame
+
+
+class ForwardBar(NamedTuple):
+    """One bar after entry. `open_` is None intraday, where there is no gap to honour."""
+
+    ts: pd.Timestamp
+    open_: float | None
+    high: float
+    low: float
+    session: int          # 0 while still inside the entry session, then 1, 2, 3...
+
+
+def _forward_walk(
+    m30: pd.DataFrame, daily: pd.DataFrame, entry_at: pd.Timestamp, max_hold_sessions: int
+) -> tuple[list[ForwardBar], float | None]:
+    """Every bar after entry, plus the price to mark an unresolved trade out at.
+
+    Returns `(bars, markout)`. A `markout` of None means no forward daily bar existed at
+    all — the trade was entered too near the end of the data and is right-censored, which
+    is a different thing from surviving the hold and being timed out.
+
+    Both resolvers walk this. Two hand-written loops would eventually disagree about which
+    bars a trade saw, and the comparison between the fixed and scaled scoreboards is only
+    meaningful while they see exactly the same ones.
+    """
+    # Neither frame may contribute a bar that is still being built — see
+    # `drop_forming_bar`. Applied here rather than at the fetch so that every caller of
+    # either resolver inherits it, including the forward record.
+    m30 = drop_forming_bar(m30, 30)
+    daily = drop_forming_bar(daily, SESSION_MINUTES)
+
     entry_day = entry_at.date()
+    bars: list[ForwardBar] = []
+
     same_day = m30[(m30.index.date == entry_day) & (m30.index > entry_at)]
     for ts, bar in same_day.iterrows():
-        # Intraday: no overnight gap to honour, so the open carries no special meaning.
-        yield ts, None, float(bar["high"]), float(bar["low"]), 0
+        bars.append(ForwardBar(ts, None, float(bar["high"]), float(bar["low"]), 0))
 
     forward = daily[daily.index.date > entry_day].head(max_hold_sessions)
     for offset, (ts, bar) in enumerate(forward.iterrows(), start=1):
-        yield ts, float(bar["open"]), float(bar["high"]), float(bar["low"]), offset
-    if len(forward):
-        # Signals the caller that the hold expired rather than the data running out.
-        yield None, None, None, float(forward["close"].iloc[-1]), -1
+        bars.append(
+            ForwardBar(ts, float(bar["open"]), float(bar["high"]), float(bar["low"]), offset)
+        )
+
+    # A mark-out price is returned ONLY when the hold genuinely expired. If the frame simply
+    # ran out of bars first, the trade is still running and must stay `open` — right-censored,
+    # not finished.
+    #
+    # Getting this wrong is expensive and was: trades entered two days before the end of the
+    # window were marked out at the last available close, labelled `time-stop`, and counted
+    # toward expectancy as completed outcomes. Two such trades averaging +2.61R lifted the
+    # 20R gross figure by 0.237R and, at 4R, reversed the verdict on the stop floor. A
+    # censored trade marked out at a favourable close is an unresolved trade wearing a
+    # result. Found 26 Aug 2026.
+    expired = len(forward) >= max_hold_sessions
+    markout = float(forward["close"].iloc[-1]) if expired else None
+    return bars, markout
 
 
 def resolve_trade_scaled(
@@ -947,17 +1004,11 @@ def resolve_trade_scaled(
     taken = False                # has the partial filled
     stop_price = signal.stop
 
-    for ts, open_, high, low, offset in _forward_bars(
-        m30, daily, signal.entry_at, cfg.max_hold_sessions
-    ):
-        if offset == -1:         # hold expired; mark the remainder out at the last close
-            trade.outcome = "time-stop"
-            trade.realised_r = booked + (1 - exit_rule.fraction if taken else 1.0) * (
-                (low - signal.entry) / risk
-            )
-            return trade
-        if offset:
-            trade.sessions_held = offset
+    bars, markout = _forward_walk(m30, daily, signal.entry_at, cfg.max_hold_sessions)
+    for bar in bars:
+        ts, open_, high, low = bar.ts, bar.open_, bar.high, bar.low
+        if bar.session:
+            trade.sessions_held = bar.session
 
         # Gaps first: a session opening beyond a level resolves there, not at the level.
         if open_ is not None and open_ <= stop_price:
@@ -999,5 +1050,14 @@ def resolve_trade_scaled(
             trade.resolved_at = ts
             return trade
 
-    trade.outcome = "open"
+    if markout is None:
+        trade.outcome = "open"
+        return trade
+
+    # Hold expired: mark whatever is still on out at the last close.
+    trade.outcome = "time-stop"
+    trade.realised_r = booked + (1 - exit_rule.fraction if taken else 1.0) * (
+        (markout - signal.entry) / risk
+    )
+    trade.resolved_at = bars[-1].ts if bars else None
     return trade

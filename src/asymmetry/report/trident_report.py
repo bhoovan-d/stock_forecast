@@ -236,6 +236,13 @@ def render_backtest(result, cfg: TridentSettings) -> Group:
     summary.add_row("Trades taken", f"{len(result.trades):,}")
     summary.add_row("Symbols / sessions", f"{result.symbols_tested} / {result.sessions_spanned}")
     summary.add_row("Fair value gaps seen", f"{result.gaps_found:,}")
+    if result.fetch_failures:
+        # Surfaced rather than buried: a dropped symbol shrinks the sample, so two runs of
+        # the same command can legitimately disagree and the reader needs to know by how much.
+        summary.add_row(
+            "[yellow]Symbols dropped (fetch failed)[/]",
+            f"[yellow]{result.fetch_failures}[/]",
+        )
     summary.add_row("Resolved (stop or target)", f"{decided:,}")
     summary.add_row(
         "Unresolved (time-stopped or still open)", f"{len(result.censored):,}"

@@ -24,6 +24,7 @@ import pandas as pd
 import pytest
 
 from asymmetry.engines.trident import (
+    SESSION_MINUTES,
     TridentSettings,
     TridentSignal,
     _cost_r,
@@ -476,3 +477,83 @@ def test_a_breakeven_stop_is_not_free_through_a_gap() -> None:
     assert scaled.outcome == "breakeven-stop"
     assert scaled.gapped is True
     assert scaled.realised_r == pytest.approx(0.5 * 1.0 + 0.5 * -4.0)   # -1.5R, not +0.5R
+
+
+def test_a_still_forming_bar_never_resolves_a_trade() -> None:
+    """Yahoo serves the bar currently being built, and its high only widens as the session
+    fills. Resolving against it books a win from a bar that, once complete, may also take
+    the stop — which this codebase books as a loss. A forward record is written once, so an
+    early settle would convert a loser into a winner permanently.
+
+    This is a real defect, found 26 Aug 2026 when a daily frame ending on an open session
+    resolved two trades off an unfinished bar.
+    """
+    from asymmetry.engines.trident import drop_forming_bar
+
+    cfg = TridentSettings(reward_risk=4.0)
+    signal = TridentSignal(
+        symbol="TESTCO", found=True, entry_at=pd.Timestamp(f"{SESSION} 11:15"),
+        entry=100.0, stop=99.0, target=104.0, risk_pct=1.0,
+    )
+    entry_day = session_bars(pd.Timestamp(SESSION), [(100.0, 100.2, 99.8, 100.0)], 1e5)
+
+    # One completed session that does nothing, then today's bar showing the target hit.
+    index = pd.DatetimeIndex(
+        [pd.Timestamp(SESSION) + pd.Timedelta(days=1),
+         pd.Timestamp(SESSION) + pd.Timedelta(days=2)]
+    ) + pd.Timedelta(hours=9, minutes=15)
+    daily = pd.DataFrame(
+        [
+            {"open": 100.0, "high": 100.5, "low": 99.5, "close": 100.2, "volume": 1e6},
+            {"open": 100.2, "high": 105.0, "low": 99.9, "close": 104.8, "volume": 1e6},
+        ],
+        index=index,
+    )
+
+    # Mid-session on that second day: the bar is still forming and must be discarded.
+    mid_session = index[-1] + pd.Timedelta(hours=2)
+    assert len(drop_forming_bar(daily, SESSION_MINUTES, now=mid_session)) == 1
+
+    # After the close it is a real bar and counts.
+    after_close = index[-1] + pd.Timedelta(minutes=SESSION_MINUTES + 1)
+    assert len(drop_forming_bar(daily, SESSION_MINUTES, now=after_close)) == 2
+
+    # And the resolver honours it: with the forming bar dropped the trade is still running.
+    # It reads as `open` rather than `time-stop` because only one session of the 60-session
+    # hold has elapsed — the data ran out, the hold did not expire.
+    trimmed = drop_forming_bar(daily, SESSION_MINUTES, now=mid_session)
+    assert resolve_trade(entry_day, trimmed, signal, cfg).outcome == "open"
+    assert resolve_trade(entry_day, daily, signal, cfg).outcome == "target"
+
+
+def test_running_out_of_data_is_open_not_a_time_stop() -> None:
+    """A trade entered near the end of the window has not finished — the data has.
+
+    Marking it out at the last available close and counting it as a completed outcome is an
+    unresolved trade wearing a result. It is also not neutral: two such trades averaging
+    +2.61R lifted this strategy's measured expectancy by 0.237R and reversed the verdict on
+    the stop floor before it was caught.
+    """
+    cfg = TridentSettings(reward_risk=4.0, max_hold_sessions=60)
+    signal = TridentSignal(
+        symbol="TESTCO", found=True, entry_at=pd.Timestamp(f"{SESSION} 11:15"),
+        entry=100.0, stop=99.0, target=104.0, risk_pct=1.0,
+    )
+    entry_day = session_bars(pd.Timestamp(SESSION), [(100.0, 100.2, 99.8, 100.0)], 1e5)
+
+    # One forward session that neither stops nor targets, against a 60-session hold.
+    index = pd.DatetimeIndex([pd.Timestamp(SESSION) + pd.Timedelta(days=1)])
+    short = pd.DataFrame(
+        [{"open": 100.0, "high": 102.5, "low": 99.5, "close": 102.4, "volume": 1e6}],
+        index=index,
+    )
+    trade = resolve_trade(entry_day, short, signal, cfg)
+    assert trade.outcome == "open"
+    assert trade.realised_r == 0.0          # never credited the favourable close
+
+    # With the hold shortened to one session, the same bar IS a genuine time stop.
+    expired = resolve_trade(
+        entry_day, short, signal, TridentSettings(reward_risk=4.0, max_hold_sessions=1)
+    )
+    assert expired.outcome == "time-stop"
+    assert expired.realised_r == pytest.approx(2.4)

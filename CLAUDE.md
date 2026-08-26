@@ -62,27 +62,30 @@ third-party indicator, and the discretionary trailing exit was replaced by a fix
 data cannot settle it**: ~60 sessions of 30m history against a claimed 8–10 setups a year
 per instrument. Never report a win rate for it without its interval.
 
-Measured 26 Aug 2026 across 200 names and 59 sessions: **22 setups, 20 resolved, 0 wins,
-net −1.40R**. That reads worse than it is. 0-for-20 does **not** exclude break-even — at a
-4.8% break-even rate a system with no edge produces that run 37% of the time — and the
-tight-looking CI on net expectancy is an artefact of observing no wins at all. What it does
-exclude is any true win rate above 13.9%. The useful finding is elsewhere: excursion
-analysis puts the entry within **±0.1R of gross break-even at every target from 1R to 20R**,
-so no target rescues it, and the loss is **costs** — mean 0.486R, because a stop at a doji
-low runs to 0.08% and `cost% / stop%` does the rest. A stop floor would fix that and is
-deliberately absent: the source has no such rule, and inventing one to improve a measurement
-of somebody else's strategy measures the invention.
+Measured 26 Aug 2026, 200 names, 59 sessions: **22 setups**. At 20R, 0 of 20 resolved won,
+net **-1.505R**. At 4R, 6 of 22 won (27.3% against a 20% break-even), gross **+0.358R**,
+net **-0.128R** after 0.486R of costs. Net is negative in every variant tried.
 
-Re-measured at **4R** on the owner's request: 20% win rate against a 20% break-even, gross
-**-0.006R** — the entry lands on gross break-even a second time, by a different route — and
--0.505R net once 0.499R of costs come off. A 0.5% stop floor halves the cost drag and makes
-net *worse*, so the floor is now excluded for a measured reason and not only a faithful one.
-Scaled exits were then swept, because "4R at 80%" is a **different metric** rather than a
-better system: no variant beats the plain fixed target, the break-even stop lifts the hit
-rate to 35% by ejecting the position from winners (trades reaching target halve, 20% -> 10%),
-and lowering the partial trigger *reduces* the win rate here because banking 0.125R cannot
-cover 0.499R of costs. **No exit rule adds edge to an entry that has none.**
-`docs/spec-trident.md`.
+**Read those as a snapshot, not a constant** - and this is the part worth carrying. Over one
+day the 4R gross figure printed -0.006R, +0.184R, +0.264R and +0.358R on the *same window*,
+because the sample grows daily and because three accounting defects in the resolver each
+flattered it: open trades dragging expectancy toward -cost, still-forming bars resolving
+trades early, and right-censored trades booked as finished (worth +0.33R of pure artefact).
+A fourth issue was reproducibility - a silent fetch failure moved the sample from 22 setups
+to 21 while the report showed only a symbol count. All four are fixed and tested.
+
+**An earlier claim here is retracted.** This file and a pushed commit both said a 0.5% stop
+floor "makes net worse, so the floor is excluded for a measured reason". It has since
+measured both ways on an **eight-trade cohort that moves on one trade**. Calling that
+measured was the error, in either direction; the floor stays off because the source has no
+such rule, which was always sufficient.
+
+What *is* stable, because it follows from geometry rather than this window: cost in R is
+`cost% / stop%` (0.08% stops cost 2.02R), no exit rule beats the plain fixed target, a
+break-even stop lifts the hit rate by **ejecting the position from winners** (trades reaching
+target roughly halve), scaling out alone buys no hit rate, and lowering the partial trigger
+*reduces* the win rate here because banking 0.125R cannot cover 0.49R of costs. **No exit
+rule adds edge to an entry that has none.** `docs/spec-trident.md`.
 
 `engines/spec_engine.py`, `engines/selection.py` and `report/brief.py` are the older
 Engineer-Brief and daily-screen engines. They are separate, keep their own gates
@@ -327,7 +330,7 @@ uv run asymmetry v3-backtest --symbols 80
 uv run asymmetry trident               # kill-zone FVG scan; empty days are the norm
 uv run asymmetry trident-backtest --symbols 0
 uv run asymmetry site                 # rebuild public/
-uv run pytest -q                      # 220 passed, 1 skipped
+uv run pytest -q                      # 222 passed, 1 skipped
 ```
 
 CI (`.github/workflows/daily-brief.yml`) runs weekdays 19:00 IST — NSE closes 15:30 and the

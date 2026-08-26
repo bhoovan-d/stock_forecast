@@ -216,36 +216,51 @@ and "everything formed but the EMAs were crossing" stay distinguishable.
 
 ## 5. Results
 
-*200 NIFTY 200 names, 59 sessions, 11,800 symbol-sessions. 26 Aug 2026.*
-Reproduce with `uv run asymmetry trident-backtest --symbols 0`.
+> **Read this before the numbers.** Everything below is a **snapshot taken 26 Aug 2026**, not
+> a constant. The same command tomorrow returns different figures, for two reasons that have
+> nothing to do with the market:
+>
+> 1. **The window grows.** Each new session resolves trades that were open, and on a
+>    22-trade sample one extra resolution moves expectancy by roughly 0.2R.
+> 2. **The sample size itself varies.** A transient Yahoo failure drops a symbol and its
+>    setups. Two runs minutes apart on 26 Aug returned 199 and 200 symbols — 21 and 22
+>    setups. `fetch_failures` now reports this; before it did, the denominator shrank
+>    invisibly while the report still read as a clean measurement.
+>
+> Over a single day this document went through four generations of point estimates, three of
+> them caused by accounting defects in the resolver (§5d) rather than by data. **Treat the
+> geometry as findings and the statistics as observations** — §5e sorts every claim into one
+> or the other.
+
+*200 NIFTY 200 names, 59 sessions, ~11,800 symbol-sessions, 0 fetch failures.*
+Reproduce with `uv run asymmetry trident-backtest --symbols 0`, and expect it to differ.
 
 ### Frequency
 
 | | |
 | --- | --: |
-| Sessions where a qualifying gap printed in the kill zone | 2,203 |
-| Setups that cleared every condition | **22** |
+| Sessions where a qualifying gap printed in the kill zone | 2,166 |
+| Setups clearing every condition | **22** |
 | Rate | 0.19% of symbol-sessions, ~0.37 per session across the NIFTY 200 |
 
-Rare, as advertised — and roughly in the region the source describes, though he arrives
-there with six instruments rather than two hundred names.
+Rare, as advertised. The source estimates 8–10 a year per instrument, though he reaches that
+with six instruments rather than two hundred names.
 
-### Outcome
+### Outcome at 20R
 
 | | |
 | --- | --: |
 | Resolved (stop or target) | 20 |
 | Won | **0** |
-| Still open (entered 24 Aug, no forward data) | 2 |
+| Still open (entered near the end of the window) | 2 |
 | Win rate | **0.0%**, 95% Wilson interval **0.0%–16.1%** |
 | Break-even at 20R | 4.8% |
-| Gross expectancy | −0.915R |
-| Mean cost | −0.486R |
-| **Net expectancy** | **−1.401R** |
-| Total | −30.8R |
+| Gross expectancy | −1.006R |
+| Mean cost | −0.499R |
+| **Net expectancy** | **−1.505R** |
+| Total | −30.1R |
 
-**Read that carefully, because it says less than it appears to.** Twenty losses in a row
-feels decisive and is not:
+**Twenty losses in a row says less than it appears to:**
 
 | True win rate | P(0 wins in 20) |
 | --: | --: |
@@ -255,128 +270,115 @@ feels decisive and is not:
 | 20% | 0.012 |
 | 90% — the source's claim | 1 × 10⁻²⁰ |
 
-So **break-even is not excluded**; a system with exactly no edge produces this run better
-than a third of the time. What *is* excluded at 5% is any true win rate above **13.9%**.
-The 90% claim at a fixed 20R target is dead several times over — but §0 already explained
-that a fixed 20R target is not what he does, so this refutes the mechanical version rather
-than the man.
+**Break-even is not excluded** — a system with exactly no edge produces this run better than
+a third of the time. What *is* excluded at 5% is any true win rate above **13.9%**. The 90%
+claim at a fixed 20R target is dead many times over, but §0 already explained that a fixed
+20R target is not what the source does.
 
-The −1.401R figure's interval of [−1.616, −1.185] looks precise and is an **artefact**:
-with no observed wins there is almost no variance in the sample to widen it. The report
-says so on the surface rather than printing a confident-looking number.
+The −1.505R interval of [−1.684, −1.326] looks precise and is an **artefact**: with no
+observed wins there is almost no variance in the sample to widen it. The report says so on
+its own surface rather than printing a confident-looking number.
 
 ### Was it the entry or the exit?
 
-All twenty deaths were stops against a target needing a median **9.4% move** while the stop
-sat a median **0.47%** away — twenty times closer. Nine of the twenty died in the entry
-session. That is a geometry problem, so the entry was measured separately by maximum
-favourable excursion: how far each trade travelled in its favour on bars that **did not**
-touch the stop. (Counting the killing bar's high would be the same favourable
-within-bar resolution the backtest refuses; it moves MOTHERSON from 18.31R to 31.15R and
-four trades from 0.00R to positive, so the distinction is not cosmetic.)
+All twenty deaths were stops, against a target needing a median **8.9% move** while the stop
+sat a median **0.45%** away — twenty times closer. Excursion analysis measures the entry
+separately: how far each trade travelled in its favour on bars that **did not** touch the
+stop. (Counting the killing bar's high would be the same within-bar favourable resolution the
+backtest refuses; it moves MOTHERSON from 18.31R to 31.15R and four trades from 0.00R to
+positive, so the distinction is not cosmetic.)
 
 | Reached before dying | n | share |
 | --- | --: | --: |
 | 0.5R | 13 | 59% |
 | 1R | 10 | 45% |
 | 2R | 8 | 36% |
-| 3R | 5 | 23% |
-| 5R | 3 | 14% |
+| 3R | 6 | 27% |
+| 5R | 5 | 23% |
 | 10R | 2 | 9% |
 | **20R** | **0** | **0%** |
 
-Median 0.89R, mean 2.66R, max 18.31R. Four trades never traded above entry at all.
+Median 0.89R, mean 2.97R, max 18.31R. Four trades never traded above entry at all.
 
-Applying those excursions to alternative fixed targets — **a descriptive exercise on 22
-trades, not a recommendation**, since choosing the best row here would be curve-fitting:
+Applying those excursions to alternative fixed targets — **descriptive, not a
+recommendation**, since picking the best row from 22 trades is curve-fitting:
 
-| Target | Wins | Win% | Gross R/trade | Net R/trade | Break-even |
+| Target | Wins | Win% | Gross | Net | Break-even |
 | --: | --: | --: | --: | --: | --: |
-| 1R | 10 | 45.5% | −0.091 | −0.577 | 50.0% |
-| 2R | 8 | 36.4% | +0.091 | −0.395 | 33.3% |
-| 3R | 5 | 22.7% | −0.091 | −0.577 | 25.0% |
-| 5R | 3 | 13.6% | −0.182 | −0.667 | 16.7% |
-| 10R | 2 | 9.1% | +0.000 | −0.486 | 9.1% |
-| 20R | 0 | 0.0% | −1.000 | −1.486 | 4.8% |
+| 1R | 10 | 45.5% | −0.091R | −0.577R | 50.0% |
+| 2R | 8 | 36.4% | +0.091R | −0.395R | 33.3% |
+| 3R | 6 | 27.3% | +0.091R | −0.395R | 25.0% |
+| 4R | 6 | 27.3% | +0.364R | −0.122R | 20.0% |
+| 5R | 5 | 22.7% | +0.364R | −0.122R | 16.7% |
+| 10R | 2 | 9.1% | +0.000R | −0.486R | 9.1% |
+| 20R | 0 | 0.0% | −1.000R | −1.486R | 4.8% |
 
-(At 3R and above the two open trades are counted as losses, which they are not.)
-
-**The entry sits within ±0.1R of gross break-even at every horizon tested.** It does not
-have an edge and it does not have a negative edge; against its own geometry it is a coin
-flip. No target rescues it, so "the 20R was too ambitious" is not the explanation.
+Gross runs from −0.09R to +0.36R across every horizon and **net is negative at all of them**.
+At 10R and 20R the two open trades are counted as losses, which they are not.
 
 ### Costs are the whole of the loss
 
-Mean cost 0.486R against a gross expectancy of roughly zero. That is not incidental — it
+Mean cost 0.486R against a gross expectancy that never leaves the neighbourhood of zero. That
 follows directly from a stop placed at a doji low:
 
 | | stop | cost in R |
 | --- | --: | --: |
 | MOTHERSON, 5 Aug | 0.08% | **2.02R** |
 | APOLLOHOSP, 8 Jun | 0.18% | 0.96R |
-| median trade | 0.47% | 0.36R |
+| median trade | 0.45% | 0.36R |
 | SUZLON, 16 Jun | 1.53% | 0.11R |
 
 **MOTHERSON was down two units of risk before the position moved.** `cost% / stop%` — the
-same relationship that forced the pullback retraction, arriving here from the opposite
-direction. A stop floor would remove those trades, and it is deliberately **not** added: the
-source has no such rule, and inventing one to improve a measurement of somebody else's
-strategy measures the invention. `--min-risk` exists for anyone who wants to test it.
-
+relationship that forced the pullback retraction, arriving here from the opposite direction.
 One trade gapped through its stop (INDIGO, 25 Jun) and booked −1.13R rather than −1.00R.
 
-### Why the other 11,778 sessions were refused
+### Why the other ~11,780 sessions were refused
 
 | Condition | Sessions |
 | --- | --: |
-| below the daily 200 EMA | 5,245 |
-| no fair value gap in the kill zone | 4,352 |
-| gap printed, nothing retraced to the 50% as a doji | 1,633 |
-| body too large for a doji | 297 |
-| no confirmation bar left in the window | 79 |
-| confirmation traded through the stop | 56 |
-| confirmation closed above the doji high | 40 |
-| EMAs not stacking | 35 |
-| daily printing blue, not green | 31 |
-| daily printing black, not green | 10 |
+| below the daily 200 EMA | 5,157 |
+| no fair value gap in the kill zone | 4,309 |
+| gap printed, nothing retraced to the 50% as a doji | 1,599 |
+| body too large for a doji | 292 |
+| insufficient history | 108 |
+| everything else — confirmation, EMAs, daily colour | ~200 |
 
 Recorded by the furthest stage each session reached. Two things worth noting: the daily
-200 EMA bias is doing most of the rejecting, which is a market-condition statement about
-this particular window as much as a filter; and **my reconstructed daily-colour indicator
-refused only 41 sessions**, so the risk that it distorted the result is small — a relief,
-since it is the component least faithful to the source.
+200 EMA bias does most of the rejecting, which is as much a statement about this window as
+about the filter; and **the reconstructed daily-colour indicator refused only ~40 sessions**,
+so the risk that my reconstruction distorted the result is small — a relief, since it is the
+component least faithful to the source.
 
-### Verdict
+### 5b. At 4R, and the stop floor
 
-**Inconclusive on the source's claim, and negative on the mechanical version of it.** The
-entry finds a rare, well-defined pattern roughly a third of a time per session, and that
-pattern's forward distribution in this window is indistinguishable from noise before costs
-and clearly negative after them. Nothing here justifies trading it, and nothing here refutes
-what the source says he does — those are different questions, and only the second one has
-been asked.
-
-### 5b. At 4R, and why no exit rule rescues it
-
-*Added 26 Aug 2026, on the owner's request to test a 1:4 target instead of 1:20.*
-
-The same 22 setups, resolved against four rule sets:
+*Re-measured on the owner's request to test 1:4 instead of 1:20.*
 
 | Variant | n | resolved | wins | win% | 95% CI | break-even | gross | cost | **net** |
 | --- | --: | --: | --: | --: | --- | --: | --: | --: | --: |
-| **4R** | 22 | 20 | 4 | **20.0%** | 8.1–41.6% | 20.0% | **−0.006R** | 0.499R | **−0.505R** |
-| 4R, 0.5% stop floor | 8 | 7 | 1 | 14.3% | 2.6–51.3% | 20.0% | −0.304R | 0.248R | −0.552R |
-| 20R | 22 | 20 | 0 | 0.0% | 0.0–16.1% | 4.8% | −1.006R | 0.499R | −1.505R |
+| **4R** | 22 | 22 | 6 | **27.3%** | 13.2–48.2% | 20.0% | **+0.358R** | 0.486R | **−0.128R** |
+| 4R, 0.5% stop floor | 8 | 8 | 2 | 25.0% | 7.1–59.1% | 20.0% | +0.234R | 0.251R | −0.017R |
+| **20R** | 22 | 20 | 0 | 0.0% | 0.0–16.1% | 4.8% | −1.006R | 0.499R | −1.505R |
 | 20R, 0.5% stop floor | 8 | 7 | 0 | 0.0% | 0.0–35.4% | 4.8% | −1.018R | 0.248R | −1.267R |
 
-**4R is far better than 20R and still loses, and it loses entirely to costs.** Gross
-expectancy is −0.006R against a 20.0% win rate and a 20.0% break-even — the entry lands on
-gross break-even almost exactly, which is the excursion finding (§5) arriving from a second
-direction. Then 0.499R of friction per trade takes it to −0.505R.
+**4R is far better than 20R and still loses.** Gross is positive at +0.358R and the 27.3% win
+rate sits above the 20.0% break-even — then 0.486R of costs takes it to −0.128R net. The
+interval, 13.2–48.2%, contains break-even, so this is not evidence of an edge; it is a sample
+too small to exclude one.
 
-**The stop floor does not fix it.** It was tested precisely because costs are the problem,
-and it halves them (0.499R → 0.248R) — yet net gets *worse*, −0.505R → −0.552R. It discards
-14 of 22 setups and the survivors underperform the ones it removed. The floor stays out of
-the engine by default, now for a measured reason rather than only a faithfulness one.
+**Retraction — the stop floor.** Earlier revisions of this document, and the commit that
+introduced it, stated that a 0.5% stop floor "halves the cost drag and makes net *worse*, so
+the floor is now excluded for a measured reason and not only a faithful one." **That was
+wrong, and the correction is not merely that the sign flipped.**
+
+The floor has since measured both ways: −0.552R against −0.505R in one generation of the
+data, then −0.017R against −0.128R in another. The cohort is **eight trades** and it moves on
+one. Calling that "measured" was the error, in either direction. This codebase already holds
+the standard that applies — `docs/spec-a-plus.md` on the gated base-breakout: *"rests on 8
+trades, which agrees with the mechanism and establishes nothing."*
+
+**The floor cannot be evaluated at n=8.** It stays off because the source has no such rule,
+which was always the sufficient reason. `--min-risk` arms it for anyone who gathers enough
+trades to settle it.
 
 ### 5c. Buying a win rate, and what it costs
 
@@ -387,47 +389,123 @@ bars; only the booking differs.
 
 | exit rule | win rate | hit 4R | gross | net |
 | --- | --: | --: | --: | --: |
-| **fixed 4R, no partial** | 20.0% | 20.0% | −0.006R | **−0.505R** |
-| 50% off at +0.25R, then break-even | 9.5% | 4.8% | −0.048R | −0.544R |
-| 75% off at +0.25R, then break-even | 4.8% | 4.8% | −0.048R | −0.544R |
-| 50% off at +0.50R, then break-even | 9.5% | 4.8% | −0.197R | −0.693R |
-| 75% off at +0.50R, then break-even | 33.3% | 4.8% | −0.173R | −0.669R |
-| 50% off at +1.00R, then break-even | 35.0% | 10.0% | −0.206R | −0.705R |
-| 75% off at +1.00R, then break-even | 35.0% | 10.0% | −0.206R | −0.705R |
-| 50% off at +1.50R, then break-even | 35.0% | 10.0% | −0.194R | −0.693R |
-| 75% off at +1.50R, then break-even | 35.0% | 10.0% | −0.163R | −0.662R |
-| 50% off at +2.00R, then break-even | 30.0% | 20.0% | −0.006R | −0.505R |
-| 75% off at +2.00R, then break-even | 30.0% | 20.0% | −0.056R | −0.555R |
-| 50% off at +0.50R, **stop stays put** | 20.0% | 20.0% | −0.094R | −0.593R |
-| 50% off at +1.00R, **stop stays put** | 20.0% | 20.0% | −0.106R | −0.605R |
+| **fixed 4R, no partial** | 27.3% | 27.3% | +0.358R | **−0.128R** |
+| 50% off at +0.25R, then break-even | 13.6% | 9.1% | +0.051R | −0.435R |
+| 75% off at +0.25R, then break-even | 9.1% | 9.1% | +0.009R | −0.477R |
+| 50% off at +0.50R, then break-even | 13.6% | 9.1% | −0.085R | −0.571R |
+| 75% off at +0.50R, then break-even | 36.4% | 9.1% | −0.102R | −0.588R |
+| 50% off at +1.00R, then break-even | 40.9% | 13.6% | −0.051R | −0.537R |
+| 75% off at +1.00R, then break-even | 40.9% | 13.6% | −0.074R | −0.560R |
+| 50% off at +1.50R, then break-even | 40.9% | 13.6% | −0.017R | −0.503R |
+| 75% off at +1.50R, then break-even | 40.9% | 13.6% | −0.000R | −0.486R |
+| 50% off at +2.00R, then break-even | 36.4% | 22.7% | +0.176R | −0.310R |
+| 75% off at +2.00R, then break-even | 36.4% | 22.7% | +0.131R | −0.355R |
+| 50% off at +0.50R, **stop stays put** | 27.3% | 27.3% | +0.119R | −0.366R |
+| 50% off at +1.00R, **stop stays put** | 27.3% | 27.3% | +0.131R | −0.355R |
 
 "Win rate" here is the share of trades ending **net positive**, which is the metric the
 scaled style is usually quoted on.
 
-Four readings, and the third is the one that was not expected:
+Four readings, and the third was predicted backwards:
 
-- **No variant beats the plain fixed target.** −0.505R is the baseline and also the best
-  result on the board.
-- **The break-even stop lifts the hit rate by ejecting you from winners.** It takes 20% →
-  35%, and halves the trades reaching the full target, 20% → 10%. Trade by trade: 360ONE and
-  TITAN both booked **+4.00R** on the fixed rule and **+0.50R** on the scaled one — price
-  reached +1R, pulled back through entry on an ordinary retrace, stopped them at break-even,
-  and *then* ran to target. Four losses became +0.50R wins, worth +6R; four winners were cut,
-  worth −10R.
-- **Lowering the partial trigger *reduces* the win rate here, and that was predicted
-  backwards.** At +0.25R a half position banks 0.125R, which does not cover 0.499R of costs,
-  so the trade still books a net loss. The manufacturing only works where cost drag is small
-  relative to the partial. **At this strategy's cost level it does not even buy the cosmetic
-  benefit.**
+- **No variant beats the plain fixed target.** −0.128R is both the baseline and the best
+  result on the board. **80% never appears at any setting**; the ceiling is 40.9%.
+- **The break-even stop lifts the hit rate by ejecting you from winners.** It takes 27.3% →
+  40.9% while halving the trades that reach the full target, 27.3% → 13.6%. Trade by trade:
+  360ONE and TITAN both booked **+4.00R** on the fixed rule and **+0.50R** on the scaled one —
+  price reached +1R, pulled back through entry on an ordinary retrace, stopped them at
+  break-even, and *then* ran to target.
+- **Lowering the partial trigger *reduces* the win rate here.** At +0.25R a half position
+  banks 0.125R, which does not cover ~0.49R of costs, so the trade still books a net loss.
+  The manufacturing only works where cost drag is small relative to the partial. **At this
+  strategy's cost level it does not even buy the cosmetic benefit.**
 - **The partial alone buys nothing.** With the stop left where it was, the win rate and the
-  target-hit rate are both unchanged at 20% and net simply falls. Scaling out is a cost, and
+  target-hit rate are both unchanged at 27.3% and net simply falls. Scaling out is a cost;
   the break-even stop is what moves the hit rate.
 
 **None of this is a criticism of the traders quoting 80%.** Win rate and R multiple trade
-against each other by construction; 80% at 0.8R and 25% at 4R are both coherent, and only
-comparing one system's win rate against another's R multiple is the error. What no exit rule
-can do is add edge to an entry that has none — and on this window, at gross −0.006R, this
-entry has none.
+against each other by construction; 80% at 0.8R and 25% at 4R are both coherent, and the
+error is only in comparing one system's win rate against another's R multiple. What no exit
+rule can do is add edge to an entry that has none.
+
+### 5d. Three accounting bugs, and what each did to the answer
+
+*26 Aug 2026. Recorded here rather than only in git history, because the numbers above moved
+twice in one day for reasons that had nothing to do with the market.*
+
+Every one of these **flattered** the result, and none was visible from the output alone —
+each produced a plausible number, which is what makes this class of bug expensive.
+
+**1. Open trades dragged expectancy toward −cost.** Expectancy averaged over *every* recorded
+trade, so a still-open position credited no profit while already carrying a full round-trip
+cost. Harmless in a 22-trade replay; ruinous in a forward record, where nearly everything is
+open in the first weeks. Fixed by averaging over `finished` trades only.
+
+**2. A still-forming bar could resolve a trade.** Yahoo serves the bar currently being built,
+and its high and low only widen as the session fills. A partial bar showing the target but
+not yet the stop books a **win**, where the completed bar might touch both — which this
+codebase books as a **loss**. The forward record writes once, so an early settle would make
+that permanent, and `trident-watch` settles on every run. Fixed by `drop_forming_bar`.
+
+**3. Right-censored trades were booked as finished.** This is the one that moved the
+published answer. Once fix 1 landed, a trade that ran out of forward data stopped being
+labelled `open` and started being labelled `time-stop` — marked out at the last available
+close and counted as a completed outcome. Two such trades, entered two days before the end of
+the window, averaged **+2.61R**:
+
+| | with the bug | corrected |
+| --- | --: | --: |
+| 20R gross | −0.678R | **−1.006R** |
+| 20R net | −1.163R | **−1.505R** |
+
+That is +0.33R of pure artefact on a 22-trade sample, and at 4R it was briefly enough to
+reverse the verdict on the stop floor. **A censored trade marked out at a favourable close is
+an unresolved trade wearing a result.** Fixed by returning a mark-out price only when the hold
+genuinely expired.
+
+**A fourth issue was reproducibility rather than accounting.** A failed fetch silently dropped
+a symbol and its setups, so two runs of the same command minutes apart returned 199 and 200
+symbols — 21 and 22 setups — while the report showed only a symbol count. Now counted and
+surfaced as `fetch_failures`.
+
+A fifth was checked and cleared rather than fixed: the two resolvers were put on a single
+shared walk (`_forward_walk`), and the refactor was verified against the previous
+implementation over the same 22 trades and the same frames — **0 mismatches** on outcome,
+realised R, sessions held, gap flag and resolution timestamp.
+
+### 5e. What is stable, and what is not
+
+The most useful output of a day spent measuring this: some of these results are properties of
+the geometry and some are properties of a 22-trade sample. They should not be quoted with the
+same confidence.
+
+**Stable — survived every generation, and follows from arithmetic:**
+
+- **Cost in R is `cost% / stop%`.** A stop at a doji low runs from 0.08% to 1.53%, so cost
+  drag runs from 0.11R to 2.02R within one strategy. Definitional, not measured.
+- **Net expectancy is negative in every variant tested** — every target, every exit rule,
+  every stop-floor setting, every generation of the data.
+- **A break-even stop raises the hit rate by ejecting the position from winners**, roughly
+  halving the count of trades that reach target.
+- **Scaling out alone buys no hit rate**; net simply falls by the cost of the partial.
+- **A very low partial trigger cannot manufacture a win rate here**, because banking 0.125R
+  does not cover ~0.49R of costs.
+- **20R off a 30-minute structural stop is a multi-week hold on an equity**, so it pays
+  delivery costs. Median stop 0.45%, median required move 8.9%.
+
+**Not stable — a snapshot, and not to be quoted as a finding:**
+
+- **Gross expectancy at either target.** At 4R it has printed −0.006R, +0.184R, +0.264R and
+  +0.358R across one day, on the same window, as data accrued and defects were fixed.
+- **The win rate**, at any target. The interval has contained break-even in every generation,
+  which is the only durable statement available.
+- **Whether the 0.5% stop floor helps or hurts.** It has measured both ways on eight trades.
+- **Anything about the source's 90% claim.** Unchanged from §0: this data cannot settle it.
+
+**The rule this suggests.** A result that moves when you change an accounting convention is
+not a result about the market. Twice in one day the sign of a conclusion here turned on how an
+unresolved trade was booked. Before quoting any expectancy from this engine, re-run it and
+check the trade count first.
 
 ---
 
