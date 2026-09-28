@@ -16,7 +16,7 @@ from rich.table import Table
 from rich.text import Text
 
 from ..config import BRIEF_DIR
-from ..engines.trident import TridentSettings, TridentSignal
+from ..engines.trident import GATE_NAMES, TridentSettings, TridentSignal
 
 # Every surface repeats this. The strategy is transcribed from a YouTube interview whose
 # headline claim is a 90% win rate at 1:20, and nothing in this repository has tested that
@@ -78,14 +78,46 @@ def execution_lines(signal: TridentSignal, cfg: TridentSettings) -> list[tuple[s
             "sessions if neither level is reached, and that outcome is counted separately "
             "from wins and losses.",
         ),
+        ("Liquidity taken", liquidity_thesis(signal, cfg)),
     ]
+
+
+def liquidity_thesis(signal: TridentSignal, cfg: TridentSettings) -> str:
+    """Which pool of resting orders, if any, was taken before this gap formed.
+
+    Three distinct states, and they must stay distinguishable. A pool was swept; no pool was
+    swept; or the layer did not run. Collapsing the last two would make a missing measurement
+    read as a measured absence — the fallback-with-no-marker trap.
+    """
+    if not cfg.tag_liquidity_sweep:
+        return "not checked — the liquidity-sweep layer is switched off for this run."
+    if not signal.sweep_checked:
+        return (
+            "**not checked** — the pool map could not be built for this name. This is not "
+            "the same as no liquidity being taken, and must not be read as it."
+        )
+    if not signal.swept:
+        return (
+            "**none** — no sell-side pool was taken and reclaimed before the gap formed. "
+            "The imbalance printed in isolation. Recorded, not penalised: whether that "
+            "matters is exactly what the tagged-vs-untagged comparison is being collected "
+            "to answer, and it has not been answered yet."
+        )
+    return (
+        f"**{signal.swept_pool}** at {signal.swept_level:,.2f}, taken and reclaimed "
+        f"{signal.sweep_bars_before_gap} candle(s) before the gap completed. The gap's 50% "
+        f"sits {signal.sweep_to_midpoint_pct:+.2f}% from that level. The thesis is that "
+        "sellers were flushed out of that pool and the imbalance is what the resulting "
+        "buying left behind — **tagged, never gated**: it does not admit or refuse this "
+        "setup, and it will not until tagged and untagged cohorts can be compared."
+    )
 
 
 def render_scan(signals: list[TridentSignal], as_of: str, cfg: TridentSettings) -> Group:
     parts: list = [
         Text.from_markup(
             f"[bold]Kill-zone trident — {as_of}[/]\n"
-            f"[dim]NIFTY 200 · long only · {cfg.reward_risk:.0f}R · "
+            f"[dim]long only · {cfg.reward_risk:.0f}R · "
             f"{cfg.anchor_interval} inside {cfg.killzone_start:%H:%M}–"
             f"{cfg.killzone_end:%H:%M} · daily {cfg.daily_bias_ema} EMA bias[/]\n"
         )
@@ -155,11 +187,47 @@ def render_scan(signals: list[TridentSignal], as_of: str, cfg: TridentSettings) 
     return Group(*parts)
 
 
+def render_scan_full(scan, as_of: str, cfg: TridentSettings) -> Group:
+    """The scan plus everything needed to argue with it: the universe gate, the funnel and
+    every near miss with its numbers.
+
+    `render_scan` still renders the setups alone, because the Markdown brief and the forward
+    record want only those. This is the console surface, where the accounting belongs.
+    """
+    parts: list = [
+        render_liquidity(scan.liquidity, cfg),
+        render_scan(scan.signals, as_of, cfg),
+        render_funnel(scan.funnel(), scan.universe_size),
+    ]
+    if scan.suppressed:
+        parts.append(
+            Text.from_markup(
+                f"\n[dim]{scan.suppressed} further qualifying setup(s) fell below the "
+                f"{cfg.max_alerts_per_session}-alert budget, ranked by net R after costs.[/]"
+            )
+        )
+    late = [f for f in scan.failures if f.gate_reached >= 4]
+    if late:
+        detail = Table(title="\nNear misses — gate 4 and 5, with the numbers",
+                       header_style="bold", box=None, padding=(0, 2))
+        detail.add_column("Symbol")
+        detail.add_column("Gate", justify="right")
+        detail.add_column("Reason")
+        for signal in late[:20]:
+            detail.add_row(signal.symbol, str(signal.gate_reached), signal.gate_reason)
+        parts.append(detail)
+        if len(late) > 20:
+            parts.append(Text.from_markup(f"[dim]…{len(late) - 20} more.[/]"))
+    if scan.fetch is not None and scan.fetch.failed:
+        parts.append(Text.from_markup(f"\n[red]Fetch failures:[/] {scan.fetch.summary()}"))
+    return Group(*parts)
+
+
 def build_markdown(signals: list[TridentSignal], as_of: str, cfg: TridentSettings) -> str:
     lines = [
         f"# Kill-zone trident — {as_of}",
         "",
-        f"*NIFTY 200 · long only · {cfg.reward_risk:.0f}R · {cfg.anchor_interval} inside "
+        f"*Long only · {cfg.reward_risk:.0f}R · {cfg.anchor_interval} inside "
         f"{cfg.killzone_start:%H:%M}–{cfg.killzone_end:%H:%M} · daily "
         f"{cfg.daily_bias_ema} EMA bias*",
         "",
@@ -337,6 +405,36 @@ def render_backtest(result, cfg: TridentSettings) -> Group:
             )
         parts.append(split)
 
+    cohorts = result.sweep_split()
+    tagged, untagged = cohorts["swept"], cohorts["not swept"]
+    if tagged or untagged:
+        sweep_table = Table(
+            title="\nSplit by whether sell-side liquidity was taken before the gap",
+            header_style="bold", box=None, padding=(0, 2),
+        )
+        sweep_table.add_column("Cohort")
+        sweep_table.add_column("n", justify="right")
+        sweep_table.add_column("Net R", justify="right")
+        for label, cohort in (
+            ("liquidity swept", tagged),
+            ("no sweep", untagged),
+            ("not checked", cohorts["not checked"]),
+        ):
+            if not cohort:
+                continue
+            sweep_table.add_row(
+                label, str(len(cohort)), f"{np.mean([t.net_r for t in cohort]):+.3f}"
+            )
+        parts.append(sweep_table)
+        parts.append(
+            Text.from_markup(
+                "[dim]Tagged, never gated. With cohorts this size the difference between "
+                "them is noise — the split is printed so it accumulates, not so it is acted "
+                "on. Making it a filter today would shrink an already tiny sample on an "
+                "untested assumption.[/]"
+            )
+        )
+
     parts.append(_rejection_table(result))
     parts.append(
         Text.from_markup(
@@ -452,6 +550,411 @@ def render_watch(records, result, cfg: TridentSettings) -> Group:
             "orders. Outcomes are settled by the same resolver the backtest uses: a bar "
             "touching both levels books a loss, and a gap through a level resolves at the "
             "open.[/]"
+        )
+    )
+    return Group(*parts)
+
+
+# ── Live monitoring surfaces ──────────────────────────────────────────────────
+
+SPREAD_CAVEAT = (
+    "Spread figures are Corwin-Schultz estimates from daily high/low, not quoted spreads. "
+    "No bid/ask feed is reachable from this project at any price."
+)
+
+
+def render_liquidity(screen, cfg: TridentSettings) -> Group:
+    """The universe gate, reported before anything downstream of it.
+
+    Printed even when it admits everything: the count that makes an expansion to the NIFTY
+    500 arguable is how much of the 500 was thrown away and why, and a gate that reports only
+    its survivors cannot be audited.
+    """
+    if screen is None:
+        return Group(
+            Text.from_markup(
+                "[dim]Liquidity gate not run — an explicit symbol list was supplied.[/]"
+            )
+        )
+    if screen.days_used == 0:
+        return Group(
+            Text.from_markup(
+                "[red]Liquidity gate could not run.[/] No bhavcopy was readable for any of "
+                f"the last {screen.days_requested} sessions, so the universe is empty by "
+                "**outage**, not by selection. Nothing below is a market observation.\n"
+            )
+        )
+
+    table = Table(title="\nUniverse — liquidity floor", header_style="bold", box=None,
+                  padding=(0, 2))
+    table.add_column("Stage")
+    table.add_column("Names", justify="right")
+    table.add_row("Index constituents", f"{screen.considered:,}")
+    for reason, count in sorted(screen.reason_counts().items(), key=lambda kv: -kv[1]):
+        table.add_row(f"  [dim]refused — {reason}[/]", f"[dim]-{count:,}[/]")
+    table.add_row("[bold]Cleared the floor[/]", f"[bold]{len(screen.passing):,}[/]")
+
+    parts: list = [table]
+    if screen.days_missing:
+        parts.append(
+            Text.from_markup(
+                f"[yellow]{len(screen.days_missing)} session(s) missing from the archive: "
+                + ", ".join(str(d) for d in screen.days_missing)
+                + f". The screen ran on {screen.days_used}, not "
+                f"{screen.days_requested}.[/]"
+            )
+        )
+    if screen.missing:
+        parts.append(
+            Text.from_markup(
+                f"[yellow]{len(screen.missing)} index member(s) had no EOD row at all: "
+                + ", ".join(sorted(screen.missing)[:12])
+                + (" …" if len(screen.missing) > 12 else "")
+                + ". Named rather than counted — a shrinking denominator is how a moving "
+                "sample looks like a stable one.[/]"
+            )
+        )
+    # The footer must say what actually gated. Printing "estimated spread <= 25bp" while the
+    # spread cap is disarmed would describe a filter that did not run — the same class of
+    # error as a fallback with no marker.
+    spread_line = (
+        f", estimated spread ≤ {cfg.max_spread_bps:.0f}bp"
+        if cfg.require_spread_estimate
+        else ""
+    )
+    parts.append(
+        Text.from_markup(
+            f"[dim]Floor: ₹{cfg.min_median_turnover_inr / 1e7:.0f} cr/day median turnover "
+            f"over {screen.days_used} sessions{spread_line}.\n"
+            + (
+                f"{SPREAD_CAVEAT}\n"
+                if cfg.require_spread_estimate
+                else "The estimated-spread cap is OFF and did not remove anything. It is "
+                     "computed and reported only: on NSE data the Corwin-Schultz estimate "
+                     "correlates -0.15 with turnover and +0.31 with daily range, and at "
+                     "25bp refuses 40 of the NIFTY 50. --require-spread arms it.\n"
+            )
+            + "This runs FIRST, before any price action is examined: a bar with no prints "
+            "has a low equal to its high, which the gap detector reads as a perfect "
+            "imbalance. Those are data holes, not liquidity voids.[/]"
+        )
+    )
+    return Group(*parts)
+
+
+def render_funnel(rows: list[tuple[int, str, int]], universe_size: int) -> Table:
+    """Distinct symbols reaching each of the five gates.
+
+    The breakdown the owner asked to keep. Its value is negative as often as positive: a gate
+    nothing ever reaches is not strict, it is unmeasurable, and this is the only surface that
+    says which one that is.
+    """
+    table = Table(title="\nFunnel — symbols reaching each gate", header_style="bold",
+                  box=None, padding=(0, 2))
+    table.add_column("Gate")
+    table.add_column("Condition")
+    table.add_column("Reached", justify="right")
+    table.add_column("Share", justify="right")
+    table.add_row("0", "universe after the liquidity floor", f"{universe_size:,}", "100%")
+    for gate, name, count in rows:
+        share = f"{count / universe_size * 100:.1f}%" if universe_size else "—"
+        table.add_row(str(gate), name, f"{count:,}", share)
+    return table
+
+
+def _alert_panel(alert, cfg: TridentSettings) -> Text:
+    """One alert, with every field the owner asked to carry on it."""
+    heading = "[yellow]GET READY[/]" if alert.gate == 4 else "[green]TRIGGER[/]"
+    lines = [
+        f"\n{heading} [bold]{alert.symbol}[/] "
+        f"[dim]gate {alert.gate} · {alert.interval} · {alert.at}[/]",
+        f"  [dim]Gap:[/] {alert.gap_low:,.2f} – {alert.gap_high:,.2f}, "
+        f"50% at {alert.gap_midpoint:,.2f}",
+        f"  [dim]Doji:[/] O {alert.doji_open:,.2f}  H {alert.doji_high:,.2f}  "
+        f"L {alert.doji_low:,.2f}  C {alert.doji_close:,.2f}  "
+        f"— body {alert.body_to_range_pct:.1f}% of range",
+        f"  [dim]Entry:[/] {alert.entry:,.2f}"
+        + ("  [yellow](PROVISIONAL)[/]" if alert.provisional else ""),
+        f"  [dim]Stop:[/] {alert.stop:,.2f}   "
+        f"[dim]Target:[/] {alert.target:,.2f}   "
+        f"[dim]Risk:[/] {alert.risk_pct:.2f}% of price",
+        f"  [dim]Net R at target:[/] {alert.net_r_at_target:+.2f}R "
+        f"[dim]({alert.reward_risk:.0f}R gross less {alert.cost_r:.2f}R round-trip cost at "
+        f"this stop distance)[/]",
+        f"  [dim]Invalidated if:[/] {alert.invalidated_if}",
+    ]
+    if alert.swept_pool:
+        lines.append(
+            f"  [dim]Liquidity taken:[/] {alert.swept_pool}, "
+            f"{alert.sweep_bars_before_gap} candle(s) before the gap, "
+            f"{alert.sweep_to_midpoint_pct:+.2f}% from the 50%"
+        )
+    if alert.note:
+        lines.append(f"  [dim]{alert.note}[/]")
+    return Text.from_markup("\n".join(lines))
+
+
+def render_live(scan, cfg: TridentSettings) -> Group:
+    """One monitoring pass: what fired, what did not, and why not."""
+    parts: list = [
+        Text.from_markup(
+            f"[bold]Kill-zone trident — live pass[/]\n"
+            f"[dim]{scan.as_of} · {cfg.anchor_interval} candles · "
+            f"{cfg.killzone_start:%H:%M}–{cfg.killzone_end:%H:%M} · "
+            f"{scan.universe_size:,} names · evaluated on closed candles only · "
+            f"pass took {scan.elapsed_sec:.0f}s[/]"
+        )
+    ]
+
+    if scan.elapsed_sec > cfg.interval_minutes * 60:
+        parts.append(
+            Text.from_markup(
+                f"\n[red]This pass took {scan.elapsed_sec:.0f}s against a "
+                f"{cfg.interval_minutes}-minute candle.[/] The monitor is behind the market: "
+                "by the time it finished, the bar it evaluated was already stale. Cut the "
+                "universe or move to a longer interval — a late alert on a 20R setup is not "
+                "a small problem, because the entry is a single bar's close."
+            )
+        )
+
+    triggers = [a for a in scan.alerts if a.gate == 5]
+    ready = [a for a in scan.alerts if a.gate == 4]
+    if not scan.alerts:
+        parts.append(
+            Text.from_markup(
+                "\n[yellow]No alerts this pass.[/] [dim]The expected state — the source's "
+                "own estimate is 8–10 setups a year per instrument.[/]"
+            )
+        )
+    else:
+        parts.append(
+            Text.from_markup(
+                f"\n[bold]{len(triggers)} trigger(s), {len(ready)} get-ready[/]"
+                + (
+                    f" [dim](+{scan.suppressed} below the "
+                    f"{cfg.max_alerts_per_session}-alert budget, ranked by net R after "
+                    "costs)[/]"
+                    if scan.suppressed
+                    else ""
+                )
+            )
+        )
+        for alert in scan.alerts:
+            parts.append(_alert_panel(alert, cfg))
+
+    parts.append(render_funnel(scan.funnel(), scan.universe_size))
+    parts.append(_failure_table(scan.failures))
+
+    if scan.fetch is not None and scan.fetch.failed:
+        parts.append(
+            Text.from_markup(
+                f"\n[red]Fetch failures:[/] {scan.fetch.summary()}\n"
+                "[dim]Named rather than counted, and retried before being given up on.[/]"
+            )
+        )
+    parts.append(
+        Text.from_markup(
+            "\n[dim]Decision support only. Evaluated on closed candles: a forming bar's "
+            "high and low only widen, so a body that looks like a doji mid-candle can be a "
+            "full-bodied invalidation by its close. Nothing here places an order.[/]\n"
+            f"[yellow]{UNPROVEN}[/]"
+        )
+    )
+    return Group(*parts)
+
+
+def _failure_table(failures, limit: int = 20) -> Group:
+    """Every candidate that failed, grouped by gate, with the numbers that decided it.
+
+    Deliberately given as much room as the winners. At this sample size the failure log is
+    the more informative half of the output: it is what distinguishes a gate doing real work
+    from a gate that simply never lets anything through.
+    """
+    if not failures:
+        return Group(Text.from_markup("\n[dim]No failures recorded this pass.[/]"))
+
+    by_gate: dict[int, list] = {}
+    for failure in failures:
+        by_gate.setdefault(failure.gate, []).append(failure)
+
+    summary = Table(title="\nWhere candidates failed", header_style="bold", box=None,
+                    padding=(0, 2))
+    summary.add_column("Gate")
+    summary.add_column("Condition")
+    summary.add_column("n", justify="right")
+    for gate in sorted(by_gate):
+        rows = by_gate[gate]
+        summary.add_row(str(gate), GATE_NAMES.get(gate, "unknown"), f"{len(rows):,}")
+
+    parts: list = [summary]
+    # The late-gate failures are the ones worth reading individually: a name that formed a
+    # gap, tagged the 50%, printed a doji and then missed is telling you something about the
+    # thresholds. A name with no gap is telling you about the day.
+    late = [f for f in failures if f.gate >= 4]
+    if late:
+        detail = Table(title="\nNear misses — gate 4 and 5, with the numbers",
+                       header_style="bold", box=None, padding=(0, 2))
+        detail.add_column("Symbol")
+        detail.add_column("Gate", justify="right")
+        detail.add_column("Reason")
+        for failure in late[:limit]:
+            detail.add_row(failure.symbol, str(failure.gate), failure.reason)
+        parts.append(detail)
+        if len(late) > limit:
+            parts.append(
+                Text.from_markup(
+                    f"[dim]…{len(late) - limit} more. Every one is in the JSONL log.[/]"
+                )
+            )
+    return Group(*parts)
+
+
+def render_sweep(sweep, cfg: TridentSettings) -> Group:
+    """The kill-zone window sweep — is 09:15–12:45 contributing anything?
+
+    Read the intervals, never the ranking. A grid searched over ~60 sessions will always have
+    a best cell, and adopting it is fitting rather than measuring; the question this sweep can
+    actually answer is whether any window is *distinguishable* from the others.
+    """
+    parts: list = [
+        Text.from_markup(
+            f"[bold]Kill-zone window sweep[/]\n"
+            f"[dim]{sweep.interval} entry · {sweep.reward_risk:.0f}R · "
+            f"{sweep.symbols_tested} symbols · {sweep.sessions_spanned} sessions · "
+            f"every window replayed on identical frames[/]\n"
+        )
+    ]
+    if not sweep.results:
+        parts.append(Text.from_markup("[red]No windows produced any trades.[/]"))
+        return Group(*parts)
+
+    # Seven columns, not ten. A squashed table is worse than a smaller one — the same
+    # judgement `render_scan` makes — and a wrapped confidence interval is unreadable, which
+    # matters here because the interval is the only thing this sweep is powered to report.
+    table = Table(title="\nBy window", header_style="bold", box=None, padding=(0, 1))
+    for column, justify in (
+        ("Window", "left"), ("n", "right"), ("Wins", "right"), ("Stop%", "right"),
+        ("Gross R", "right"), ("Net R", "right"), ("95% CI on net", "right"),
+    ):
+        table.add_column(column, justify=justify)
+
+    for row in sweep.results:
+        thin = row.setups < sweep.MIN_CELL
+        label = row.label
+        if row.label == sweep.baseline:
+            label = f"[cyan]{label} *[/]"
+        if thin:
+            label = f"[dim]{label}[/]"
+        table.add_row(
+            label,
+            f"[dim]{row.setups}[/]" if thin else f"[bold]{row.setups}[/]",
+            f"{row.wins}",
+            f"{row.mean_risk_pct:.2f}" if row.mean_risk_pct == row.mean_risk_pct else "—",
+            f"{row.gross_r:+.3f}" if row.gross_r == row.gross_r else "—",
+            f"{row.net_r:+.3f}" if row.net_r == row.net_r else "—",
+            f"{row.ci_low:+.2f}…{row.ci_high:+.2f}" if row.ci_low == row.ci_low else "—",
+        )
+    parts.append(table)
+    parts.append(
+        Text.from_markup(
+            f"[dim]* the transplanted window. Rows in grey carry fewer than "
+            f"{sweep.MIN_CELL} trades and take no part in any comparison.[/]"
+        )
+    )
+
+    thin = sweep.thin_cells()
+    if thin:
+        parts.append(
+            Text.from_markup(
+                f"\n[yellow]{len(thin)} of {len(sweep.results)} windows produced fewer than "
+                f"{sweep.MIN_CELL} trades[/] ("
+                + ", ".join(f"{r.label}: {r.setups}" for r in thin)
+                + "). They are shown above and excluded from every comparison below. A "
+                "window with two trades has a narrow interval for the same reason a coin "
+                "flipped twice looks decisive."
+            )
+        )
+    best = sweep.best()
+    if best is not None:
+        parts.append(
+            Text.from_markup(
+                f"\n[dim]Best comparable cell: {best.label} at {best.net_r:+.3f}R on "
+                f"{best.setups} setups. Reported, not recommended.[/]"
+            )
+        )
+    if sweep.overlapping_intervals():
+        parts.append(
+            Text.from_markup(
+                "\n[yellow]Every window's confidence interval overlaps every other's.[/] "
+                "No block of the session is distinguishable from any other at this sample "
+                "size — which means the transplanted 09:15–12:45 is neither vindicated nor "
+                "convicted, and is not what is deciding the strategy's result. Do not adopt "
+                "the best-looking cell: on this many sessions a grid search will always "
+                "produce one, and adopting it is fitting."
+            )
+        )
+    else:
+        parts.append(
+            Text.from_markup(
+                "\n[green]At least one window separates from the others on this sample.[/] "
+                "Treat that as a hypothesis for forward collection, not a setting to change: "
+                "the grid was searched on the same data that would justify the change."
+            )
+        )
+    parts.append(
+        Text.from_markup(
+            "\n[dim]Windows overlap by design — a disjoint grid can split a real effect "
+            "across a boundary and report nothing on either side. Every window ran on the "
+            "same fetched frames, so a symbol cannot be present in one cell and absent from "
+            "another.[/]"
+        )
+    )
+    return Group(*parts)
+
+
+def render_failure_log(rows: list[dict], limit: int = 40) -> Group:
+    """The accumulated JSONL failure log, bucketed. Read across days, not within one."""
+    if not rows:
+        return Group(Text.from_markup("[yellow]No failures recorded yet.[/]"))
+
+    by_bucket: dict[str, int] = {}
+    by_gate: dict[int, int] = {}
+    for row in rows:
+        by_bucket[row.get("bucket", "unknown")] = by_bucket.get(row.get("bucket", "unknown"), 0) + 1
+        gate = int(row.get("gate", 0))
+        by_gate[gate] = by_gate.get(gate, 0) + 1
+
+    sessions = len({row.get("session", "") for row in rows})
+    parts: list = [
+        Text.from_markup(
+            f"[bold]Trident failure log[/]\n"
+            f"[dim]{len(rows):,} refusals across {sessions} session(s)[/]\n"
+        )
+    ]
+    gates = Table(title="\nBy gate", header_style="bold", box=None, padding=(0, 2))
+    gates.add_column("Gate")
+    gates.add_column("Condition")
+    gates.add_column("n", justify="right")
+    gates.add_column("Share", justify="right")
+    for gate in sorted(by_gate):
+        gates.add_row(
+            str(gate), GATE_NAMES.get(gate, "unknown"), f"{by_gate[gate]:,}",
+            f"{by_gate[gate] / len(rows) * 100:.1f}%",
+        )
+    parts.append(gates)
+
+    buckets = Table(title="\nBy condition", header_style="bold", box=None, padding=(0, 2))
+    buckets.add_column("Condition")
+    buckets.add_column("n", justify="right")
+    for bucket, count in sorted(by_bucket.items(), key=lambda kv: -kv[1])[:limit]:
+        buckets.add_row(bucket, f"{count:,}")
+    parts.append(buckets)
+    parts.append(
+        Text.from_markup(
+            "\n[dim]This log is currently worth more than the winners. With 22 measured "
+            "setups, what tells you whether a gate is doing real work is the shape of what "
+            "it refuses — a threshold that never binds is not strict, and one that refuses "
+            "everything is not measurable.[/]"
         )
     )
     return Group(*parts)

@@ -529,4 +529,188 @@ check the trade count first.
   as their own outcome rather than counted as wins or losses.
 - **Nothing has traded live.**
 
+
+---
+
+## 7. Version 2 — live monitoring, the NIFTY 500, a 5-minute track, and liquidity context
+
+Built 29–30 August 2026. Full numbers in
+[`docs/2026-08-30-trident-v2-measurements.md`](2026-08-30-trident-v2-measurements.md); this
+section records what changed in the engine and the two decisions that came out differently
+from how they were asked for.
+
+### 7.1 Five gates, named once
+
+The detector always walked the same sequence; v2 names it and emits an event at each step, so
+the live monitor, the funnel and the failure log cannot develop separate ideas of where a
+candidate died.
+
+| Gate | Condition |
+| --: | --- |
+| 1 | context — liquidity, daily 200-EMA bias, enough bars in the window |
+| 2 | a qualifying fair value gap completes inside the window |
+| 3 | price trades down into the gap's 50% |
+| 4 | ...as a doji that closes back above it — **get ready** |
+| 5 | the next candle confirms below the doji's high — **trigger** |
+
+Gates 3 and 4 were one test before and are now two, because they fail for opposite reasons: a
+bar that never reached the level says the imbalance was not respected, while one that reached
+it and closed below says the gap was consumed. Collapsing them hid which.
+
+`detect_trident_setup(..., sink=[])` collects the events. It is an **observer on the single
+geometry implementation**, not a second one — the backtest, the live monitor, the forward
+record and the window sweep all call the same function.
+
+### 7.2 The failure log carries numbers, and it is the more useful half
+
+Every refusal records the gate and the arithmetic that produced it: `body 47.3% of range,
+limit 30.0%`, `close 1,284.20 ≥ doji high 1,281.55`, `EMA9 102.14 ≤ EMA13 102.41 — the stack
+is crossed`. With 21 setups on the anchor timeframe, this log is what can say whether the
+30% doji threshold is doing work or merely starving the strategy. A reason with no figures in
+it is an opinion.
+
+Pooled across the measured run, gate 5 refuses about **93% of everything that reaches gate
+4** on every timeframe. Roughly one get-ready in fifteen becomes a trade — which is the
+operational case for alerting on the two separately, and equally the case for treating a
+gate-4 alert as a reason to look rather than to act.
+
+### 7.3 Live monitoring, on closed candles only
+
+`asymmetry trident-monitor` evaluates at each candle boundary inside the kill zone, waking 45
+seconds after it. Nothing is ever decided on a forming bar: its high and low only widen, so a
+body that reads as a doji mid-candle can be a full-bodied invalidation by its close. Both
+frames pass through `drop_forming_bar` before the detector sees them.
+
+Alerts carry symbol, timestamp, gap high/low/midpoint, the doji's OHLC, body-to-range %,
+entry/stop/target, risk as a percentage of price, and **net R after that trade's own
+round-trip costs**. At gate 4 the confirmation bar has not printed, so the entry is quoted as
+explicitly **provisional** — the doji's close, with the arithmetic that follows from it —
+alongside the two things that *are* fixed: the stop at the doji's low, and the level that
+invalidates the setup. Quoting a gate-4 entry as final would be a fabricated price.
+
+**A pass costs roughly 1.2 s per symbol**, Yahoo's pacing floor. A 30-minute candle therefore
+affords about 1,500 names and a 5-minute candle about 250. The monitor times itself and says
+so in red when a pass outlives its own candle, because a late alert on a single-bar entry is
+not a small problem.
+
+### 7.4 The universe is the NIFTY 500, behind a turnover floor
+
+The floor runs **first**, before any price action is examined, and for a specific reason: a
+bar in which nothing printed has a low equal to its high, so the next bar's low sits above it
+and the detector sees a textbook imbalance. **Those are data holes, not liquidity voids**, and
+the tail of the 500 is full of them. `tests/test_trident_v2.py` pins that the geometry cannot
+tell one from the other, which is why the screen has to come before it.
+
+It screens on EOD bhavcopy — one file a day for the whole market, against 500 paced fetches —
+and does not reuse `settings.min_median_turnover_inr` (₹5 crore, V3's, calibrated for a swing
+on a daily bar). Sharing that constant would retune the deployed daily brief the next time
+this one is tuned for a 5-minute bar.
+
+**368 of 500 clear ₹25 crore/day.**
+
+### 7.5 The estimated-spread filter was requested, built, measured, and disarmed
+
+There is no bid/ask feed reachable from this project at any price, so the spread had to be
+estimated; Corwin-Schultz from daily high/low is the standard choice. On NSE data it does not
+measure what a spread filter has to measure. It correlates **−0.15** with median turnover and
+**+0.31** with median daily range — it ranks by volatility about twice as strongly as by
+illiquidity — and at a 25 bp cap it refuses **40 of the NIFTY 50**, ICICIBANK (₹1,209 cr/day)
+and BHARTIARTL (₹1,077 cr/day) among them, while reserving its widest readings for the most
+volatile names rather than the thinnest.
+
+No threshold rescues that: a cap loose enough to admit ICICIBANK admits everything. So the
+estimate is computed, printed on every row, and **off by default** — the same disposition as
+V3's catalyst filter. `--require-spread` arms it. Turnover, a direct observation rather than
+an inference from range, is what actually removes the tail.
+
+### 7.6 The 5-minute track is a parallel track, and it loses to its own costs
+
+Same five gates, EMAs recomputed on the 5-minute series, run alongside the 30-minute rather
+than replacing it. At 4R over 59 sessions and 150 names:
+
+| Entry TF | Setups | Win % | Median stop | Cost in R | Gross R | Net R | 95% CI |
+| --- | --: | --: | --: | --: | --: | --: | --- |
+| 5m | 213 | 23.9 | 0.20 % | 1.205 | +0.219 | **−0.986** | −1.33 to −0.64 |
+| 15m | 76 | 21.1 | 0.32 % | 0.712 | +0.020 | **−0.692** | −1.22 to −0.17 |
+| 30m | 21 | 19.0 | 0.47 % | 0.499 | −0.039 | **−0.538** | −1.36 to +0.28 |
+| 60m | 0 | — | — | — | — | — | — |
+
+The 5-minute track has the **best** raw hit rate — 23.9% against a 20% break-even — and the
+**worst** net result, because 1.205R of every unit risked goes on costs. That is not a
+surprise; it is `cost% / stop%` with a 0.20% stop. Gross expectancy falls as the bar grows
+while cost in R falls faster, so the net ranking across timeframes is the cost curve rather
+than a statement about which bar size the pattern prefers.
+
+The 5m and 15m intervals exclude zero. Those two are losing on this window, not merely
+unproven. The 30m interval still contains it, which is the same verdict as v1.
+
+**Alerts are capped per session and ranked by net R after costs**, never by raw setup
+quality. On the 5-minute track the cap always binds, and ranking by anything cost-blind would
+put the tightest stops at the top — which are precisely the setups surrendering the most of
+their own R.
+
+**60m returns nothing, and the kill zone is why.** NSE serves seven 60-minute bars a session,
+of which four fall inside 09:15–12:45, and the pattern needs five. The transplanted window is
+what makes that timeframe impossible.
+
+### 7.7 The kill-zone window is now a parameter, and the transplant does not look load-bearing
+
+`asymmetry trident-sweep` replays every candidate window **on identical fetched frames**, so
+no cell can differ from another by which symbols happened to load. Six of eight cells produced
+fewer than ten trades and are excluded from comparison; they are still printed, because one of
+them shows +2.658R with an interval that excludes every other window's, on **two trades, both
+winners**. The ten-trade floor exists because of that cell.
+
+The two comparable cells:
+
+| Window | Setups | Win % | Gross R | Net R | 95% CI |
+| --- | --: | --: | --: | --: | --- |
+| 09:15–12:45 (the transplant) | 21 | 19.0 | −0.039 | −0.538 | −1.36 to +0.28 |
+| 09:15–15:30 (whole session) | 59 | 32.8 | +1.071 | +0.389 | −0.57 to +1.35 |
+
+Restricting to the transplant discards about two-thirds of the setups and buys nothing:
+−0.538R against +0.389R. Their intervals overlap, so the full session is not *demonstrably*
+better and the honest verdict is that **the inherited window is neither vindicated nor
+convicted, and is not what is deciding this strategy's result**. The direction is nonetheless
+the opposite of the analogy's promise: if the London mapping transferred, the morning block is
+where the setups should have been.
+
+**No window has been adopted.** A grid searched over 59 sessions always has a best cell, and
+adopting it is fitting rather than measuring. What has changed is that 09:15–12:45 is a
+parameter on every command instead of an assumption.
+
+### 7.8 Liquidity sweeps are tagged, never gated
+
+Five pool families — equal highs/lows, prior day, prior week, opening range, and daily swing
+pivots — with a sweep defined as price wicking through a level and closing back on the origin
+side within N candles (`--sweep-candles`, default 3). For a long, the pool wanted is
+**sell-side**: a low taken before the gap forms.
+
+The distinction that makes the layer worth anything is that **a break is not a sweep**. Price
+that trades through a low and stays below has broken the level; the thesis being tagged is the
+opposite one — orders removed and price rejected. Both cases are pinned in the tests.
+
+Each signal records which pool was taken, how many candles before the gap, and the distance
+from that level to the gap's midpoint, and every surface states which of the three states it
+is in: swept, not swept, or **not checked**. That third state exists because a fallback
+indistinguishable from a real answer is a false claim, which this codebase has already paid
+for once.
+
+Measured, the cohorts say nothing yet: at 15m the swept cohort runs +0.304R gross against
+−0.103R untagged (23 vs 53 trades), and at 30m the split reverses on seven trades. Both are
+noise. The comparison has started; it needs forward samples, not a re-run of this window.
+
+### 7.9 Fetch failures are named
+
+Every missing symbol is retried and then reported by name, on the scan, the backtest, the
+monitor and the sweep. `PacedClient` already retried the HTTP call, but its retries never
+covered the case that actually bites: a 200 response carrying an HTML throttle page, which
+parses to None and looks exactly like "no data for this symbol". A second attempt now happens
+above that layer.
+
+This is the defect that moved a measured sample from 22 setups to 21 while the report said
+only "199 symbols" — a shrinking denominator wearing the clothes of a stable measurement.
+
+---
+
 This is decision support. It contains no order-placement code and never will.
