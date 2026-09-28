@@ -73,6 +73,7 @@ def fetch_chart(
     range_: str = "1y",
     interval: str = "1d",
     as_of: date | None = None,
+    cache_only: bool = False,
 ) -> pd.DataFrame | None:
     """Fetch OHLCV bars. Returns None if unavailable, so callers can degrade.
 
@@ -91,8 +92,13 @@ def fetch_chart(
         if interval.endswith("d") or interval.endswith("k") or interval.endswith("o")
         else settings.cache_ttl_intraday_sec
     )
-    payload = cache.get_json(key, ttl)
+    # Historical calibration must be repeatable. Cache-only mode intentionally treats a
+    # previously captured response as immutable for the run rather than expiring it after
+    # five minutes and silently changing the evidence halfway through a replay.
+    payload = cache.get_json(key, -1 if cache_only else ttl)
 
+    if payload is None and cache_only:
+        return None
     if payload is None:
         resp = _client.get(_BASE + symbol, params={"range": range_, "interval": interval})
         if resp is None:

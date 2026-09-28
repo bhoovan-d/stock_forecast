@@ -42,9 +42,9 @@ from .structure import classify_structure, find_pivots
 # Horizons for relative strength (V3 §5): one week, one month, one quarter.
 RS_HORIZONS = (5, 20, 60)
 
-# How the entry order is placed. A reclaim has already confirmed, so the trigger bar's close
-# is the entry; a continuation is not a trade until price clears the flag, so the order rests
-# beyond it. Renderers key their wording off these.
+# How the entry order is placed. A reclaim has already confirmed, so its reference level is
+# known at the trigger close but replay/live execution fills only on the next available bar.
+# A continuation is not a trade until price clears the flag, so the order rests beyond it.
 ENTRY_CONFIRMED = "confirmed"
 ENTRY_STOP_THROUGH = "stop-through"
 
@@ -241,6 +241,10 @@ class V3Plan:
     quantity: int
     invalidation: str
     setup: SetupType
+    risk_budget_inr: float = 0.0
+    position_value_inr: float = 0.0
+    sizing_basis: str = ""
+    binding_constraint: str = "risk budget"
     nearest_barrier: float | None = None
     barrier_blocks: bool = False
     feasible: bool = True
@@ -255,7 +259,7 @@ class V3Plan:
     # setup and "you are already in, at market" for another. These record which, and the
     # level the price was derived from, so no renderer has to re-derive it and get it wrong.
     #
-    # ENTRY_CONFIRMED  reclaim — confirmation already happened on the trigger bar
+    # ENTRY_CONFIRMED  reclaim — confirmation happened; fill on the next available bar
     # ENTRY_STOP_THROUGH  continuation — resting order just beyond the flag boundary
     entry_rule: str = ENTRY_CONFIRMED
     entry_level: float | None = None
@@ -267,6 +271,9 @@ class V3Plan:
     # including a live one — an untimed "live" is what made an archive-tier scan of a closed
     # session claim to be actionable right now.
     trigger_bar: pd.Timestamp | None = None
+    # First instant at which the completed trigger candle may be used.  Kept separate from
+    # trigger_bar because market-data APIs index candles by interval start.
+    decision_at: pd.Timestamp | None = None
 
     @property
     def is_live(self) -> bool:
@@ -295,7 +302,7 @@ def _plan_at_bar(
     atr_pct: float,
     setup: SetupType = SetupType.NONE,
 ) -> V3Plan:
-    """Entry from the 15m trigger, stop at technical invalidation, target at 4R.
+    """Entry from the 15m trigger, stop at technical invalidation, target at `min_reward_risk`.
 
     **Entry depends on the setup**, and getting this wrong silently destroys the strategy.
     A generic "break the session high" trigger puts entry at the top of the day, which
@@ -385,13 +392,24 @@ def _plan_at_bar(
     else:
         entry_min, entry_max = stop / (1 + hi), stop / (1 + lo)
 
-    target = entry + 4.0 * risk if long_side else entry - 4.0 * risk
+    # Resolved from `settings` *here*, inside the function body, not as a default argument —
+    # `settings` is a module-level singleton bound at import, which is trap 4.
+    #
+    # This line read a hardcoded `4.0` until 9 Sep 2026, while `settings.min_reward_risk`
+    # sat next to it unread. That is trap 12 verbatim: a setting nothing reads. Editing it
+    # in `.env` moved the older spec engine's target (entry.py reads it properly) and left
+    # V3's exactly where it was, so the two engines would have silently disagreed about what
+    # the R multiple was. Found by replaying V3 at 3R against 4R and getting an identical
+    # 252 wins from an identical 3,542 triggers — arithmetically impossible if the target
+    # had actually moved, since anything reaching 4R reaches 3R on the way.
+    reward_risk = settings.reliability_target_r
+    target = entry + reward_risk * risk if long_side else entry - reward_risk * risk
     target_pct = abs(target / entry - 1) * 100
 
     # ── Hard filter: 4R feasibility (§10, §14) ────────────────────────────────
     feasible, _score, note = move_feasible(target_pct, adr_pct, atr_pct)
     if not feasible:
-        raise V3Reject("4R feasibility", note)
+        raise V3Reject(f"{reward_risk:g}R feasibility", note)
 
     # Opposing structure before the target.
     #
@@ -416,13 +434,40 @@ def _plan_at_bar(
 
     if major is not None:
         room = abs(major - entry) / abs(target - entry)
-        if room < 0.6:
-            raise V3Reject(
-                "4R feasibility",
-                f"major weekly structure at {major:,.2f} sits {room:.0%} of the way to target",
-            )
+        raise V3Reject(
+            f"{reward_risk:g}R feasibility",
+            f"major weekly structure at {major:,.2f} blocks the target ({room:.0%} of the move)",
+        )
 
-    quantity = int(settings.risk_budget_inr // risk) if risk > 0 else 0
+    # Resolve capital settings here, at call time. Tests and operators can change the
+    # singleton between scans; binding any of these as a default argument would freeze the
+    # old value at import.
+    risk_budget = settings.resolved_risk_budget_inr
+    risk_quantity = int(risk_budget // risk) if risk > 0 else 0
+    quantity = risk_quantity
+    binding_constraint = "risk budget"
+    sizing_basis = (
+        f"₹{settings.account_equity_inr:,.0f} equity × {settings.risk_per_trade_pct:.2f}%"
+        if settings.account_equity_inr is not None
+        and "risk_budget_inr" not in settings.model_fields_set
+        and settings.risk_budget_inr == 5000.0
+        else f"₹{risk_budget:,.0f} explicit risk budget"
+        if "risk_budget_inr" in settings.model_fields_set or settings.risk_budget_inr != 5000.0
+        else "legacy ₹5,000 risk budget (account equity not configured)"
+    )
+    if settings.account_equity_inr is not None:
+        max_notional = settings.account_equity_inr * settings.max_position_value_pct / 100
+        notional_quantity = int(max_notional // entry) if entry > 0 else 0
+        if notional_quantity < quantity:
+            quantity = notional_quantity
+            binding_constraint = (
+                f"{settings.max_position_value_pct:.1f}% max position value"
+            )
+    if quantity <= 0:
+        raise V3Reject(
+            "capital sizing",
+            f"available capital permits zero shares ({sizing_basis}; {binding_constraint})",
+        )
 
     return V3Plan(
         direction=direction,
@@ -433,6 +478,10 @@ def _plan_at_bar(
         target=round(target, 2),
         target_pct=round(target_pct, 2),
         quantity=quantity,
+        risk_budget_inr=round(risk_budget, 2),
+        position_value_inr=round(quantity * entry, 2),
+        sizing_basis=sizing_basis,
+        binding_constraint=binding_constraint,
         invalidation=(
             f"{TRIGGER_TIMEFRAME_MINUTES}m swing {'low' if long_side else 'high'} "
             f"at {stop:,.2f}"
@@ -543,6 +592,7 @@ def build_v3_plan(
         # now" no matter how old the data is — and an archive-tier scan runs against a
         # session that closed hours or days ago.
         plan.trigger_bar = window.index[-1]
+        plan.decision_at = pd.Timestamp(window.index[-1]) + pd.Timedelta(minutes=15)
         plan.triggered_at = (
             "live" if offset == 0 else str(window.index[-1].strftime("%d %b %H:%M"))
         )

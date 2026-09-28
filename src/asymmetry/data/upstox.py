@@ -154,6 +154,39 @@ class UpstoxClient:
         minutes = minutes[~minutes.index.duplicated(keep="last")]
         return self._resample(minutes, rule)
 
+    def historical_intraday(
+        self, symbol: str, start: date, end: date, *, interval: str = "15m"
+    ) -> pd.DataFrame | None:
+        """Fetch a bounded historical range without a delayed-data fallback.
+
+        Minute history is requested in 30-calendar-day chunks.  The caller persists only
+        complete, validated 15-minute sessions; an unavailable chunk therefore blocks
+        calibration instead of quietly shortening its history.
+        """
+        key = self.instrument_key(symbol)
+        rule = _RESAMPLE.get(interval)
+        if key is None or rule is None or not self.authenticated or end < start:
+            return None
+        frames: list[pd.DataFrame] = []
+        cursor = start
+        while cursor <= end:
+            chunk_end = min(end, cursor + timedelta(days=29))
+            resp = self._client.get(
+                f"{_API}/historical-candle/{key}/1minute/"
+                f"{chunk_end:%Y-%m-%d}/{cursor:%Y-%m-%d}"
+            )
+            if resp is None:
+                return None
+            frame = self._to_frame(resp.json())
+            if frame is not None and not frame.empty:
+                frames.append(frame)
+            cursor = chunk_end + timedelta(days=1)
+        if not frames:
+            return None
+        minutes = pd.concat(frames).sort_index()
+        minutes = minutes[~minutes.index.duplicated(keep=False)]
+        return self._resample(minutes, rule)
+
     def daily(self, symbol: str, *, days: int = 400) -> pd.DataFrame | None:
         key = self.instrument_key(symbol)
         if key is None or not self.authenticated:
@@ -179,7 +212,9 @@ class UpstoxClient:
 
     @staticmethod
     def _resample(minutes: pd.DataFrame, rule: str) -> pd.DataFrame:
-        out = minutes.resample(rule, label="left", closed="left").agg(
+        out = minutes.resample(
+            rule, origin="start_day", offset="15min", label="left", closed="left"
+        ).agg(
             {"open": "first", "high": "max", "low": "min", "close": "last", "volume": "sum"}
         )
         # Resampling spans the overnight gap; drop the empty bars it invents.

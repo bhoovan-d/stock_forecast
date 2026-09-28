@@ -13,6 +13,7 @@ chain (§12). Two reporting choices follow directly from the spec:
 
 from __future__ import annotations
 
+import math
 from datetime import date, datetime, timedelta
 
 from rich.console import Group
@@ -121,7 +122,7 @@ def hard_filter_note(scan: V3Scan) -> str:
     catalyst" and "the catalyst filter never ran" are opposite facts, and a page that
     renders them identically is claiming a check it did not perform.
     """
-    base = "4R feasibility, stop distance, liquidity and technical validity"
+    base = "2R feasibility, stop distance, liquidity and technical validity"
     if scan.catalyst_required:
         return (
             f"Five hard filters may reject: {base}, and a catalyst — §12 requires an answer "
@@ -169,6 +170,41 @@ def execution_lines(candidate: V3Candidate) -> list[tuple[str, str]]:
     long_side = candidate.direction == "long"
     rows: list[tuple[str, str]] = []
 
+    estimates = [
+        estimate for estimate in (
+            candidate.probability_2r, candidate.probability_3r, candidate.probability_4r
+        ) if estimate is not None
+    ]
+    if estimates:
+        summaries = []
+        for estimate in estimates:
+            verdict = "passes" if estimate.accepted else "does not pass"
+            probability = (
+                f"{estimate.probability:.0%}" if math.isfinite(estimate.probability)
+                else "unavailable"
+            )
+            confidence = (
+                f"{estimate.lower:.0%}–{estimate.upper:.0%}"
+                if math.isfinite(estimate.lower) and math.isfinite(estimate.upper)
+                else "unavailable"
+            )
+            expected = (
+                f"{estimate.expected_net_r:+.2f}R"
+                if math.isfinite(estimate.expected_net_r) else "unavailable"
+            )
+            conservative_expected = (
+                f"{estimate.conservative_net_r:+.2f}R"
+                if math.isfinite(estimate.conservative_net_r) else "unavailable"
+            )
+            summaries.append(
+                f"{estimate.target_r}R {probability} "
+                f"(conservative range {confidence}, "
+                f"{estimate.n} exact-group trades, expected {expected}, "
+                f"conservative expected {conservative_expected}; "
+                f"{verdict})"
+            )
+        rows.append(("Measured chance", "; ".join(summaries) + "."))
+
     # ── the order ─────────────────────────────────────────────────────────────
     if plan.entry_rule == ENTRY_STOP_THROUGH and plan.entry_level:
         through = abs(plan.entry / plan.entry_level - 1) * 100
@@ -183,9 +219,9 @@ def execution_lines(candidate: V3Candidate) -> list[tuple[str, str]]:
     else:
         rows.append((
             "Entry",
-            f"{'Buy' if long_side else 'Sell'} at market or limit near {plan.entry:,.2f} — "
-            f"the {candidate.setup_name} confirmed on the trigger bar, so that bar's "
-            "close is the entry. There is no further level to wait for.",
+            f"{'Buy' if long_side else 'Sell'} on the next available 15-minute bar — "
+            f"{plan.entry:,.2f} is the signal-bar reference, not an assumed fill. "
+            "Cancel if the actual fill is outside the valid range below.",
         ))
 
     # ── when the quoted plan stops being this trade ───────────────────────────
@@ -254,10 +290,14 @@ def execution_lines(candidate: V3Candidate) -> list[tuple[str, str]]:
             "(weekdays only — an NSE holiday in between pushes it out a day).",
         ))
 
+    target_r = candidate.recommended_reward_risk or settings.reliability_target_r
+    target = candidate.recommended_target or plan.target
     rows.append((
         "Target basis",
-        f"4R is measured from the fill: {plan.target:,.2f} assumes entry at "
-        f"{plan.entry:,.2f} with {plan.risk:,.2f} of risk.",
+        f"{target_r:g}R is measured from the fill: {target:,.2f} assumes entry at "
+        f"{plan.entry:,.2f} with {plan.risk:,.2f} of risk. Size: {plan.quantity:,} shares, "
+        f"₹{plan.position_value_inr:,.0f} notional on a ₹{plan.risk_budget_inr:,.0f} risk "
+        f"budget ({plan.sizing_basis}); binding constraint: {plan.binding_constraint}.",
     ))
     return rows
 
@@ -266,7 +306,7 @@ def render_v3(scan: V3Scan) -> Group:
     parts: list = [
         Text.from_markup(
             f"[bold]Specification V3 — {scan.as_of}[/]\n"
-            f"[dim]NIFTY 500 · long + short · 4R minimum · stop "
+            f"[dim]NIFTY 500 · production long-only · fixed 2R · paper evidence · stop "
             f"{settings.min_stop_pct:.1f}–{settings.v3_max_stop_pct:.1f}% · 1–5 sessions[/]\n"
             f"[dim]{scan.regime_note} · data: {scan.tier}[/]\n"
             + (f"[dim]Regime inputs: {scan.regime_detail}[/]\n" if scan.regime_detail else "")
@@ -275,6 +315,8 @@ def render_v3(scan: V3Scan) -> Group:
                 if scan.threshold
                 else ""
             )
+            + f"[dim]Probability model: {scan.probability_model_status}[/]\n"
+            + f"[dim]Rollout: {scan.rollout_phase} · {scan.rollout_progress}[/]\n"
         )
     ]
 
@@ -290,7 +332,7 @@ def render_v3(scan: V3Scan) -> Group:
         "proved a 60m/120m carry setup",
         str(scan.evaluated - scan.catalyst_rejected - scan.carry_rejected),
     )
-    funnel.add_row("cleared the quality floor", str(scan.cleared_floor))
+    funnel.add_row("passed explicit geometry", str(scan.cleared_floor))
     funnel.add_row("[bold]shown today[/]", f"[bold]{len(scan.trades)}[/]")
     parts.append(funnel)
 
@@ -314,12 +356,14 @@ def render_v3(scan: V3Scan) -> Group:
         table.add_column("Entry", justify="right", no_wrap=True)
         table.add_column("Stop", justify="right", no_wrap=True)
         table.add_column("Stop%", justify="right")
-        table.add_column("4R target", justify="right", no_wrap=True)
+        table.add_column("Target", justify="right", no_wrap=True)
         table.add_column("Move", justify="right")
         table.add_column("Qty", justify="right")
 
         for candidate in scan.trades:
             plan = candidate.plan
+            target = candidate.recommended_target or plan.target
+            target_pct = (target / plan.entry - 1) * 100
             style = _direction_style(candidate.direction)
             table.add_row(
                 f"[bold]{candidate.symbol}[/]",
@@ -329,8 +373,8 @@ def render_v3(scan: V3Scan) -> Group:
                 f"{plan.entry:,.2f}",
                 f"{plan.stop:,.2f}",
                 f"{plan.stop_pct:.2f}%",
-                f"{plan.target:,.2f}",
-                f"{plan.target_pct:+.1f}%",
+                f"{target:,.2f}",
+                f"{target_pct:+.1f}%",
                 str(plan.quantity),
             )
         parts.append(table)
@@ -341,9 +385,8 @@ def render_v3(scan: V3Scan) -> Group:
         parts.append(
             Text.from_markup(
                 "\n[yellow]Nothing qualified.[/]\n"
-                f"[dim]V3 targets ~{settings.target_setups_per_month} setups a month, not a "
-                "daily list. Most days produce none, and the specification is explicit that "
-                "the 4R and stop requirements never loosen to fill a quota.[/]"
+                "[dim]Frequency is not a target. The system stays silent until every "
+                "geometry, data and evidence requirement passes.[/]"
             )
         )
 
@@ -404,7 +447,7 @@ def build_v3_markdown(scan: V3Scan) -> str:
     lines = [
         f"# Specification V3 — {scan.as_of}",
         "",
-        f"*NIFTY 500 · long + short · 4R minimum · stop {settings.min_stop_pct:.1f}–"
+        f"*NIFTY 500 · production long-only · fixed 2R · paper evidence · stop {settings.min_stop_pct:.1f}–"
         f"{settings.v3_max_stop_pct:.1f}% · 1–5 sessions*",
         "",
         f"*{scan.regime_note} · data: {scan.tier}*",
@@ -414,6 +457,10 @@ def build_v3_markdown(scan: V3Scan) -> str:
         lines += [f"*Regime inputs: {scan.regime_detail}*", ""]
     if scan.threshold:
         lines += [f"*Quality floor {scan.threshold:.0f}/100 — {scan.threshold_basis}*", ""]
+    lines += [
+        f"*Probability model: {scan.probability_model_status}*",
+        f"*Rollout: {scan.rollout_phase} · {scan.rollout_progress}*", "",
+    ]
     lines += [
         "> Decision support only. Every row is a setup for your own judgement, never an "
         "instruction to buy or sell. The system places no orders.",
@@ -434,7 +481,7 @@ def build_v3_markdown(scan: V3Scan) -> str:
     lines += [
         f"| Proved a 60m/120m carry setup | "
         f"{scan.evaluated - scan.catalyst_rejected - scan.carry_rejected} |",
-        f"| Cleared the quality floor | {scan.cleared_floor} |",
+        f"| Passed explicit geometry | {scan.cleared_floor} |",
         f"| **Shown today** | **{len(scan.trades)}** |",
         "",
     ]
@@ -453,31 +500,31 @@ def build_v3_markdown(scan: V3Scan) -> str:
 
     lines += [
         "---", "", f"## Today's setups — {len(scan.trades)}", "",
-        f"*{scan.cleared_floor} cleared the quality floor; the best "
-        f"{len(scan.trades)} are shown. V3 targets ~10–15 a month, so the cap demotes the "
-        "rest to the watch list rather than widening the output.*", "",
+        f"*{scan.cleared_floor} passed explicit geometry; up to {len(scan.trades)} are shown. "
+        "Composite scores remain research diagnostics and frequency is not optimized.*", "",
     ]
     if not scan.trades:
         lines += [
             "**Nothing qualified today.**",
             "",
-            f"V3 targets roughly {settings.target_setups_per_month} setups a month, not a "
-            "daily list. Most days produce none, and the specification is explicit that the "
-            "4R and stop-distance requirements never loosen to fill a quota.",
+            "Frequency is not a target. The system remains silent until every geometry, "
+            "data and evidence requirement passes.",
             "",
         ]
     else:
         lines += [
-            "| # | Symbol | Dir | Setup | Score | Entry | Stop | Stop% | 4R target | Move | Qty |",
+            "| # | Symbol | Dir | Setup | Score | Entry | Stop | Stop% | Target | Move | Qty |",
             "| --: | --- | --- | --- | --: | --: | --: | --: | --: | --: | --: |",
         ]
         for i, candidate in enumerate(scan.trades, 1):
             plan = candidate.plan
+            target = candidate.recommended_target or plan.target
+            target_pct = (target / plan.entry - 1) * 100
             lines.append(
                 f"| {i} | **{candidate.symbol}** | {candidate.direction.upper()} | "
                 f"{candidate.setup_name} | {candidate.score:.1f} | {plan.entry:,.2f} | "
-                f"{plan.stop:,.2f} | {plan.stop_pct:.2f}% | {plan.target:,.2f} | "
-                f"{plan.target_pct:+.1f}% | {plan.quantity} |"
+                f"{plan.stop:,.2f} | {plan.stop_pct:.2f}% | {target:,.2f} | "
+                f"{target_pct:+.1f}% | {plan.quantity} |"
             )
         lines.append("")
 
@@ -645,7 +692,7 @@ def _catalyst_section(result) -> list:
 def render_backtest(result) -> Group:
     """Walk-forward result for the V3 engine, measured on real 15m triggers.
 
-    Reported bluntly: the win rate is compared against the break-even a 4R payoff requires,
+    Reported bluntly: the win rate is compared against the break-even a 2R payoff requires,
     because that single comparison decides whether the specification is tradeable. Costs are
     shown separately rather than folded in, so a marginal result cannot look profitable.
     """
@@ -675,9 +722,17 @@ def render_backtest(result) -> Group:
     summary.add_row("Symbols / sessions", f"{result.symbols_tested} / {result.sessions_spanned}")
     summary.add_row("Resolved (hit stop or target)", f"{len(result.resolved):,}")
     summary.add_row("[bold]Win rate[/]", f"[bold]{win:.1f}%[/]")
-    summary.add_row("Break-even at 4R", f"{breakeven:.1f}%")
+    win_lo, win_hi = result.win_rate_interval
+    summary.add_row("95% Wilson interval", f"{win_lo:.1f}%–{win_hi:.1f}%")
+    summary.add_row("Break-even at 2R", f"{breakeven:.1f}%")
     summary.add_row("Expectancy per trade", f"{result.expectancy_r:+.3f}R")
-    summary.add_row("Costs", f"-{result.cost_r:.3f}R")
+    mean_cost = sum(float(t.cost_r or 0) for t in result.trades) / len(result.trades)
+    summary.add_row("Mean cost (per-trade stops)", f"-{mean_cost:.3f}R")
+    typical_stop = (settings.min_stop_pct + settings.v3_max_stop_pct) / 2
+    summary.add_row(
+        f"Typical cost (old {typical_stop:.1f}% basis)",
+        f"-{result.typical_cost_r:.3f}R",
+    )
     summary.add_row("[bold]Net expectancy[/]", f"[bold]{result.net_expectancy_r:+.3f}R[/]")
     summary.add_row("Total", f"{result.total_r:+.1f}R")
 
@@ -696,11 +751,17 @@ def render_backtest(result) -> Group:
         table.add_column("n", justify="right")
         table.add_column("Win rate", justify="right")
         table.add_column("Mean R", justify="right")
+        if label == "By stop distance":
+            table.add_column("Cost R", justify="right")
+            table.add_column("Net R", justify="right")
         for row in frame.itertuples():
             style = "green" if row.mean_r > 0 else "red"
             rate = f"{row.win_rate:.0f}%" if row.win_rate == row.win_rate else "—"
-            table.add_row(str(row.bucket), str(int(row.n)), rate,
-                          f"[{style}]{row.mean_r:+.2f}[/]")
+            cells = [str(row.bucket), str(int(row.n)), rate,
+                     f"[{style}]{row.mean_r:+.2f}[/]"]
+            if label == "By stop distance":
+                cells.extend((f"-{row.mean_cost_r:.2f}", f"{row.mean_net_r:+.2f}"))
+            table.add_row(*cells)
         parts.append(table)
 
     # ── what the carry gate is worth ──────────────────────────────────────────

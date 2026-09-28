@@ -185,7 +185,7 @@ def test_stop_tighter_than_floor_is_rejected():
     assert "noise" in caught.value.detail
 
 
-def test_emitted_plans_sit_inside_the_band_and_are_exactly_4r():
+def test_emitted_plans_sit_inside_the_band_and_use_the_fixed_reliability_target():
     emitted = 0
     for swing in (0.6, 0.9, 1.2, 1.4):
         intraday, daily = _plan_inputs(swing_pct=swing)
@@ -198,7 +198,9 @@ def test_emitted_plans_sit_inside_the_band_and_are_exactly_4r():
             continue
         emitted += 1
         assert settings.min_stop_pct <= plan.stop_pct <= settings.v3_max_stop_pct
-        assert plan.target == pytest.approx(plan.entry + 4 * plan.risk, abs=0.05)
+        assert plan.target == pytest.approx(
+            plan.entry + settings.reliability_target_r * plan.risk, abs=0.05
+        )
         assert plan.stop < plan.entry < plan.target
     assert emitted > 0
 
@@ -217,7 +219,9 @@ def test_short_plan_is_the_mirror_image():
         pytest.skip("synthetic short setup did not clear the filters")
     assert plan.direction == "short"
     assert plan.target < plan.entry < plan.stop
-    assert plan.target == pytest.approx(plan.entry - 4 * plan.risk, abs=0.05)
+    assert plan.target == pytest.approx(
+        plan.entry - settings.reliability_target_r * plan.risk, abs=0.05
+    )
 
 
 # ── Feasibility (§10) ─────────────────────────────────────────────────────────
@@ -517,7 +521,6 @@ def test_execution_lines_state_order_band_bar_and_deadline():
     )
     labels = [label for label, _ in execution_lines(candidate)]
     assert labels == ["Entry", "Valid fill", "Trigger", "Act on", "Exit by", "Target basis"]
-
     values = dict(execution_lines(candidate))
     assert "Buy-stop" in values["Entry"]
     assert f"{plan.entry_min:,.2f}" in values["Valid fill"]
@@ -526,6 +529,25 @@ def test_execution_lines_state_order_band_bar_and_deadline():
     # A setup found after the close is for the next session, not a record of the past.
     assert "session" in values["Act on"]
 
+
+def test_notional_cap_binds_and_zero_size_is_refused(monkeypatch):
+    intraday, daily = _plan_inputs(swing_pct=0.9)
+    monkeypatch.setattr(settings, "account_equity_inr", 100_000.0)
+    monkeypatch.setattr(settings, "risk_budget_inr", 500.0)
+    monkeypatch.setattr(settings, "max_position_value_pct", 10.0)
+    plan = build_v3_plan(
+        direction="long", intraday=intraday, daily=daily, weekly=daily,
+        adr_pct=6.0, atr_pct=6.0, setup=SetupType.CONTINUATION,
+    )
+    assert plan.position_value_inr <= 10_000
+    assert "max position" in plan.binding_constraint
+
+    monkeypatch.setattr(settings, "max_position_value_pct", 0.0001)
+    with pytest.raises(V3Reject, match="capital sizing"):
+        build_v3_plan(
+            direction="long", intraday=intraday, daily=daily, weekly=daily,
+            adr_pct=6.0, atr_pct=6.0, setup=SetupType.CONTINUATION,
+        )
 
 def test_a_post_close_setup_points_at_the_next_session():
     """Friday's closing print is a setup for Monday, and must say so.
@@ -588,3 +610,42 @@ def test_settings_are_read_per_call_not_bound_at_import(monkeypatch):
     monkeypatch.setattr(settings, "base_breakout_min_volume_mult", 99.0)
     after = detect_base_breakout(frame, direction="long").found
     assert before and not after
+
+
+def test_the_reliability_r_multiple_is_read_from_settings_not_hardcoded():
+    """`min_reward_risk` must actually reach V3's target.
+
+    It did not until 9 Sep 2026: `build_v3_plan` computed `entry + 4.0 * risk` while the
+    setting sat unread beside it, so tuning it moved the older spec engine's target
+    (`entry.py` reads it properly) and left V3's untouched — two engines silently
+    disagreeing about what the R multiple was. That is trap 12, a setting nothing reads,
+    and it is invisible without a test because every number the engine prints still looks
+    self-consistent.
+
+    Found by replaying V3 at 3R against 4R and getting an identical 252 wins from an
+    identical 3,542 triggers, which is arithmetically impossible if the target had moved:
+    anything reaching 4R reaches 3R on the way.
+    """
+    intraday, daily = _plan_inputs(swing_pct=0.9)
+    original = settings.reliability_target_r
+    plans = {}
+    try:
+        for rr in (3.0, 4.0):
+            settings.reliability_target_r = rr
+            try:
+                plans[rr] = build_v3_plan(
+                    direction="long", intraday=intraday, daily=daily, weekly=daily,
+                    adr_pct=6.0, atr_pct=6.0,
+                )
+            except V3Reject:
+                pytest.skip("synthetic fixture did not clear the filters")
+    finally:
+        settings.reliability_target_r = original
+
+    for rr, plan in plans.items():
+        multiple = (plan.target - plan.entry) / plan.risk
+        assert multiple == pytest.approx(rr, abs=0.02), (
+            f"target is {multiple:.2f}R at min_reward_risk={rr} — the setting is not "
+            "reaching the target"
+        )
+    assert plans[3.0].target < plans[4.0].target

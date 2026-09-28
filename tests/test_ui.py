@@ -64,10 +64,10 @@ def test_flag_is_omitted_when_off():
 
 def test_multi_repeats_its_flag():
     argv = registry.build_argv(
-        registry.BY_ID["v3"], {"setup": ["reclaim", "continuation"], "per_day": 2}
+        registry.BY_ID["v3"], {"setup": ["reclaim", "reclaim"], "per_day": 2}
     )
     assert argv.count("--setup") == 2
-    assert "reclaim" in argv and "continuation" in argv
+    assert argv.count("reclaim") == 2
 
 
 def test_blank_optional_value_is_dropped():

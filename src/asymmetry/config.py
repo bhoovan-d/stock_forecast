@@ -127,7 +127,22 @@ class Settings(BaseSettings):
     v3_max_stop_pct: float = 1.5
     # Selectivity target (§17). Exceeding it means raising the threshold, never loosening
     # the 4R or stop requirements.
-    target_setups_per_month: int = 15
+    target_setups_per_month: int = 0
+
+    # Reliability-first V4. Frequency is deliberately not a target: zero means there is
+    # no monthly quota to fill. The first production strategy is one long cash-equity
+    # reclaim with a fixed 2R exit.
+    reliability_rule_version: str = "reclaim-long-2r-v1"
+    reliability_target_r: float = 2.0
+    reliability_min_history_days: int = 730
+    reliability_min_sessions: int = 100
+    reliability_min_months_forward: int = 6
+    reliability_max_drawdown_r: float = 10.0
+    reliability_max_losing_streak: int = 8
+    reliability_max_symbol_share: float = 0.20
+    reliability_max_sector_share: float = 0.35
+    reliability_max_month_share: float = 0.35
+    reliability_min_regime_trades: int = 10
 
     # ── The fifth hard filter: a catalyst must exist (added 18 Aug 2026) ───────
     # V3 §16 fixed the hard filters at four, and this codebase enforced that: the carry gate
@@ -187,7 +202,15 @@ class Settings(BaseSettings):
     min_holding_sessions: int = 1
     max_holding_sessions: int = 5
 
+    # No account value means legacy behaviour: ₹5,000 risk per trade. Once equity is set,
+    # the percentage becomes the basis. RISK_BUDGET_INR remains an explicit override.
+    account_equity_inr: float | None = None
+    risk_per_trade_pct: float = 0.25
     risk_budget_inr: float = 5000.0
+    max_position_value_pct: float = 20.0
+    max_concurrent_positions: int = 1
+    max_portfolio_heat_pct: float = 0.25
+    max_positions_per_sector: int = 2
     atr_period: int = 14
     atr_stop_multiple: float = 1.5
 
@@ -198,6 +221,26 @@ class Settings(BaseSettings):
     slippage_pct: float = 0.05
     # Probability that an overnight gap executes the stop worse than its stated price.
     gap_risk_pct: float = 0.15
+
+    # ── V3 probability gate ──────────────────────────────────────────────────────
+    # These are funding gates, not a claim about the current model. The historical replay
+    # must first estimate each probability, then a later untouched period must approve it.
+    # The conservative Wilson bound must also clear cost-adjusted break-even, so these
+    # headline floors cannot make a weak or tiny cohort look fundable by themselves.
+    v3_min_probability_2r: float = 0.70
+    v3_min_probability_3r: float = 0.55
+    v3_min_probability_4r: float = 0.45
+    v3_min_conservative_2r: float = 0.60
+    v3_min_conservative_3r: float = 0.45
+    v3_min_conservative_4r: float = 0.35
+    v3_min_conservative_net_r: float = 0.40
+    v3_probability_min_validation: int = 100
+    v3_probability_min_symbols: int = 30
+    v3_probability_min_sessions: int = 100
+    v3_probability_embargo_sessions: int = 5
+    v3_forward_min_signals: int = 30
+    v3_probability_max_age_days: int = 30
+    v3_probability_max_bar_age_minutes: int = 35
 
     # ── Resistance clearance (Brief §14, §18) ─────────────────────────────────
     # A 4R target sitting beyond major resistance is only accepted when the model assigns
@@ -226,6 +269,17 @@ class Settings(BaseSettings):
     http_timeout_sec: float = 30.0
     cache_ttl_intraday_sec: int = 300
     cache_ttl_daily_sec: int = 3600
+
+    @property
+    def resolved_risk_budget_inr(self) -> float:
+        explicit_override = (
+            "risk_budget_inr" in self.model_fields_set or self.risk_budget_inr != 5000.0
+        )
+        if explicit_override:
+            return self.risk_budget_inr
+        if self.account_equity_inr is not None:
+            return self.account_equity_inr * self.risk_per_trade_pct / 100
+        return self.risk_budget_inr
 
     @property
     def db_path(self) -> Path:

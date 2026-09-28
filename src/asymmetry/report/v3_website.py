@@ -154,7 +154,7 @@ def _funnel(scan: V3Scan) -> str:
             scan.evaluated - scan.catalyst_rejected - scan.carry_rejected,
             False,
         ),
-        ("Cleared the quality floor", scan.cleared_floor, False),
+        ("Passed explicit geometry", scan.cleared_floor, False),
         ("Shown today", len(scan.trades), True),
     ]
     top = max((count for _l, count, _f in stages), default=1) or 1
@@ -191,7 +191,10 @@ def _card(candidate: V3Candidate) -> str:
         return ""
 
     risk = abs(plan.entry - plan.stop)
-    reward = abs(plan.target - plan.entry)
+    target = candidate.recommended_target or plan.target
+    reward = abs(target - plan.entry)
+    target_r = candidate.recommended_reward_risk or settings.reliability_target_r
+    target_pct = (target / plan.entry - 1) * 100
     total = risk + reward
     risk_pct = risk / total * 100 if total else 20
 
@@ -213,8 +216,8 @@ def _card(candidate: V3Candidate) -> str:
     <div class="lv"><div class="k">Entry</div><div class="v">{plan.entry:,.2f}</div></div>
     <div class="lv stop"><div class="k">Stop</div>
       <div class="v">{plan.stop:,.2f} <span style="font-size:11px">({plan.stop_pct:.2f}%)</span></div></div>
-    <div class="lv target"><div class="k">4R target</div>
-      <div class="v">{plan.target:,.2f} <span style="font-size:11px">({plan.target_pct:+.1f}%)</span></div></div>
+    <div class="lv target"><div class="k">{target_r:g}R target</div>
+      <div class="v">{target:,.2f} <span style="font-size:11px">({target_pct:+.1f}%)</span></div></div>
     <div class="lv"><div class="k">Quantity</div><div class="v">{plan.quantity}</div></div>
   </div>
   <div class="rr">
@@ -231,7 +234,7 @@ def _card(candidate: V3Candidate) -> str:
       ({candidate.sector_percentile:.0f}th pct)</dd>
     <dt>Why now</dt><dd>{_esc(candidate.why_now)}</dd>
     <dt>Why it can move</dt><dd>ADR <b>{candidate.adr_pct:.1f}%</b> · ATR
-      {candidate.atr_pct:.1f}% · needs <b>{plan.target_pct:.1f}%</b></dd>
+      {candidate.atr_pct:.1f}% · needs <b>{target_pct:.1f}%</b></dd>
     <dt>Structure</dt><dd class="chain">W {_esc(candidate.weekly_note)} &rarr;
       D {_esc(candidate.daily_note)}""" + (
         f" &rarr; 60m {_esc(candidate.hourly_note)}" if candidate.hourly_note else ""
@@ -248,10 +251,8 @@ def build_v3_html(scan: V3Scan) -> str:
     regime_class = "pos" if scan.regime == "aggressive" else "caution"
     setups = "".join(_card(c) for c in scan.trades) or (
         '<div class="empty"><div class="h">Nothing qualified today.</div>'
-        f'<div class="p">V3 targets roughly {settings.target_setups_per_month} setups a '
-        "month, not a daily list. Most sessions produce none, and the specification is "
-        "explicit that the 4R and stop-distance requirements never loosen to fill a "
-        "quota.</div></div>"
+        '<div class="p">Frequency is not a target. The system remains silent until every '
+        "geometry, data and evidence requirement passes.</div></div>"
     )
 
     rejects = ""
@@ -288,13 +289,15 @@ def build_v3_html(scan: V3Scan) -> str:
   <header class="masthead">
     <div class="brand">
       <h1>Specification V3</h1>
-      <div class="sub">{_esc(scan.as_of)} · NIFTY 500 · long + short · 1–5 sessions</div>
+      <div class="sub">{_esc(scan.as_of)} · NIFTY 500 · production long-only · 1–5 sessions</div>
     </div>
     <div class="chips">
       <span class="chip {regime_class}">{_esc(scan.regime_note)}</span>
-      <span class="chip">4R minimum</span>
+      <span class="chip">fixed 2R · paper evidence</span>
       <span class="chip">stop {settings.min_stop_pct:.1f}–{settings.v3_max_stop_pct:.1f}%</span>
       <span class="chip">{_esc(scan.tier)}</span>
+      <span class="chip">probability: {_esc(scan.probability_model_status)}</span>
+      <span class="chip">rollout: {_esc(scan.rollout_phase)}</span>
     </div>""" + (
         f'\n    <div class="regime-detail">Regime inputs: {_esc(scan.regime_detail)}</div>'
         if scan.regime_detail
@@ -304,8 +307,7 @@ def build_v3_html(scan: V3Scan) -> str:
 
   <section>
     <h2>Selectivity</h2>
-    <p class="lede">The rejections are the product. V3 targets roughly
-      {settings.target_setups_per_month} setups a month, so the funnel is meant to be brutal.</p>
+    <p class="lede">The rejections are the product. Frequency is never optimized or promised.</p>
     {_funnel(scan)}
     {_floor_note(scan)}
     <p class="lede">{_esc(hard_filter_note(scan))}</p>
@@ -313,7 +315,7 @@ def build_v3_html(scan: V3Scan) -> str:
 
   <section>
     <h2>Today's setups</h2>
-    <p class="lede">{scan.cleared_floor} cleared the quality floor; the best
+    <p class="lede">{scan.cleared_floor} passed explicit geometry; up to
       {len(scan.trades)} are shown.</p>
     {setups}
   </section>

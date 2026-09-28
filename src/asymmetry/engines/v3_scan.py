@@ -28,6 +28,7 @@ from ..config import settings
 from ..data import MarketData, nse_archive, yahoo
 from ..spec import SetupType, Trend
 from .carry import CarryState, assess_carry, gate_applies
+from ..data.bar_contract import completed_bars
 from .setups import SetupSignal, detect_setup
 from .structure import analyse_timeframe, classify_structure
 from .v3 import (
@@ -74,6 +75,14 @@ class V3Candidate:
     weekly_trend: Trend = Trend.SIDEWAYS
     daily_trend: Trend = Trend.SIDEWAYS
     carry: CarryState = field(default_factory=CarryState)
+    # Probability is deliberately separate from the quality score. These estimates are
+    # filled only when a chronologically validated model exists.
+    probability_2r: object | None = None
+    probability_3r: object | None = None
+    probability_4r: object | None = None
+    intraday_tier: str = ""
+    recommended_reward_risk: int | None = None
+    recommended_target: float | None = None
     rejected_by: str = ""
     reject_detail: str = ""
 
@@ -146,6 +155,10 @@ class V3Scan:
     catalyst_status: str = "off"
     reject_counts: dict[str, int] = field(default_factory=dict)
     tier: str = ""
+    probability_model_status: str = "not calibrated"
+    probability_model_source: str = ""
+    rollout_phase: str = "paper"
+    rollout_progress: str = "0 of 30 completed forward signals"
 
     @property
     def rejected(self) -> int:
@@ -158,6 +171,20 @@ def _resample_weekly(daily: pd.DataFrame) -> pd.DataFrame:
         .agg({"high": "max", "low": "min", "close": "last", "volume": "sum"})
         .dropna()
     )
+
+
+def _completed_bars(frame: pd.DataFrame | None, minutes: int) -> pd.DataFrame | None:
+    """Remove the currently-forming live candle.
+
+    Upstox builds the newest aggregate from minute candles already received. Treating that
+    partial candle as closed would let an apparent trigger disappear before the advertised
+    15-minute decision point.
+    """
+    if frame is None or frame.empty:
+        return frame
+    interval = "15m" if minutes == 15 else "60m" if minutes == 60 else f"{minutes}min"
+    contracted = completed_bars(frame, interval, pd.Timestamp.now(tz="Asia/Kolkata"))
+    return contracted.loc[:, ["open", "high", "low", "close", "volume"]]
 
 
 def stage_one(
@@ -195,10 +222,10 @@ def stage_one(
         if len(daily) < 80:
             continue
 
-        # Both directions are checked; V3 permits either.
+        # Reliability V4 begins with one instrument and one setup. Other directions and
+        # setup families remain research-only until they earn independent evidence.
         long_setup = detect_setup(daily, "long")
-        short_setup = detect_setup(daily, "short")
-        found = [s for s in (long_setup, short_setup) if s.found]
+        found = [s for s in (long_setup,) if s.found and s.kind.value == "reclaim"]
         if not found:
             continue
         setup = max(found, key=lambda s: s.quality)
@@ -210,7 +237,7 @@ def stage_one(
 
         # Cheapest possible 4R feasibility check, using the tightest permitted stop. If even
         # that cannot reach the target, no intraday structure will rescue it.
-        best_case_target = 4.0 * settings.min_stop_pct
+        best_case_target = settings.reliability_target_r * settings.min_stop_pct
         feasible, _score, _note = move_feasible(best_case_target, adr_pct, atr_pct)
         if not feasible:
             continue
@@ -342,6 +369,10 @@ def run_v3_scan(
         # the flag did not.
         wanted = {s.lower() for s in setups}
         candidates = [c for c in candidates if c.setup.kind.value.lower() in wanted]
+    candidates = [
+        candidate for candidate in candidates
+        if candidate.direction == "long" and candidate.setup.kind.value == "reclaim"
+    ]
 
     scan = V3Scan(as_of=str(as_of), universe=500, liquid=len(liquid), with_setup=len(candidates))
     logger.info(
@@ -367,18 +398,11 @@ def run_v3_scan(
     # 50s admitted 180 names — against a specification asking for 10–15 a *month*. §17 is
     # explicit that the response to too many qualifiers is a higher threshold, never a
     # larger output.
-    floors = {"aggressive": 72.0, "selective": 76.0, "defensive": 80.0}
-    threshold = min_score or floors.get(regime.verdict.value, 76.0)
+    floors = {"aggressive": 0.0, "selective": 0.0, "defensive": 0.0}
+    threshold = 0.0
     scan.threshold = threshold
     scan.threshold_basis = (
-        f"set by hand via --min-score {min_score:.0f}"
-        if min_score
-        else (
-            f"{regime.verdict.value} regime (aggressive {floors['aggressive']:.0f} · "
-            f"selective {floors['selective']:.0f} · defensive {floors['defensive']:.0f}); "
-            "calibrated against a live scan of 269 candidates whose scores ran 55–81, "
-            "median 65"
-        )
+        "reliability-first: composite score is diagnostic and cannot qualify or reject"
     )
 
     catalyst_scores: dict[str, float] = {}
@@ -412,7 +436,9 @@ def run_v3_scan(
         )
     else:
         scan.catalyst_status = "armed"
-    scan.catalyst_required = scan.catalyst_status == "armed"
+    scan.catalyst_required = False
+    if scan.catalyst_status == "armed":
+        scan.catalyst_status = "observed"
 
     # Ordered by promise, but *all* candidates are evaluated. Truncating the intraday pass
     # is what caused the engine to miss valid setups: a name can rank mid-pack on leadership
@@ -459,7 +485,13 @@ def run_v3_scan(
         # Ordering is deliberate. The gate rejects most candidates, so testing carry first
         # means the 15m fetch — the expensive half of stage 2 — is only paid for names that
         # could actually be traded. Running it afterwards would cost more and prove less.
-        h60 = yahoo.fetch_chart(symbol, range_="730d", interval="60m", as_of=as_of)
+        if as_of == date.today():
+            h60_read = data.intraday(candidate.symbol, interval="60m", days=60)
+            h60 = _completed_bars(h60_read.value, 60)
+            hourly_tier = h60_read.tier
+        else:
+            h60 = yahoo.fetch_chart(symbol, range_="730d", interval="60m", as_of=as_of)
+            hourly_tier = None
         candidate.carry = assess_carry(
             h60,
             direction=candidate.direction,
@@ -487,7 +519,13 @@ def run_v3_scan(
             candidate.hourly_note = f"{state.trend.value}, {state.setup.value}"
 
         # ── Stage 2b: the 15m entry, only for names that proved they carry ────
-        m15 = yahoo.fetch_chart(symbol, range_="60d", interval="15m", as_of=as_of)
+        if as_of == date.today():
+            m15_read = data.intraday(candidate.symbol, interval="15m", days=60)
+            m15 = _completed_bars(m15_read.value, 15)
+            candidate.intraday_tier = min(hourly_tier, m15_read.tier).label
+        else:
+            m15 = yahoo.fetch_chart(symbol, range_="60d", interval="15m", as_of=as_of)
+            candidate.intraday_tier = "HISTORICAL (Yahoo)"
 
         try:
             plan = build_v3_plan(
@@ -552,12 +590,7 @@ def run_v3_scan(
             carry_score=candidate.carry.score,
         )
 
-        if candidate.score >= threshold:
-            scan.trades.append(candidate)
-        else:
-            candidate.rejected_by = "quality threshold"
-            candidate.reject_detail = f"score {candidate.score:.1f} below {threshold:.0f}"
-            scan.near_miss.append(candidate)
+        scan.trades.append(candidate)
 
     scan.trades.sort(key=lambda c: -c.score)
     scan.near_miss.sort(key=lambda c: -c.score)
@@ -567,6 +600,72 @@ def run_v3_scan(
     # is demoted rather than published. Nothing is hidden: the count that cleared the floor
     # is reported, and the demoted names appear on the watch list.
     scan.cleared_floor = len(scan.trades)
+
+    # Portfolio limits demote rather than erase. The journal is intentionally loaded here,
+    # after individual setup work is complete, so a transient journal problem cannot turn
+    # into a false technical rejection.
+    try:
+        from ..v3_events import open_records as load_open_records
+
+        open_records = load_open_records()
+    except Exception as exc:  # noqa: BLE001 — report the outage and keep the scan usable
+        logger.warning(f"[v3] portfolio record unavailable: {exc}")
+        open_records = []
+
+    current_keys = {
+        (candidate.symbol, pd.Timestamp(candidate.plan.trigger_bar).isoformat())
+        for candidate in scan.trades
+        if candidate.plan is not None and candidate.plan.trigger_bar is not None
+    }
+    # A same-session re-run sees its own records. Exclude those identities so idempotent
+    # scans do not demote a plan merely because the prior invocation recorded it.
+    open_records = [record for record in open_records if record.key not in current_keys]
+    sector_counts: dict[str, int] = {}
+    for record in open_records:
+        sector_counts[record.sector] = sector_counts.get(record.sector, 0) + 1
+    heat_inr = sum(record.risk_inr for record in open_records)
+    accepted: list[V3Candidate] = []
+    portfolio_demoted: list[V3Candidate] = []
+
+    for candidate in scan.trades:
+        plan = candidate.plan
+        reason = ""
+        detail = ""
+        if settings.max_concurrent_positions > 0 and (
+            len(open_records) + len(accepted) >= settings.max_concurrent_positions
+        ):
+            reason = "portfolio position cap"
+            detail = f"maximum {settings.max_concurrent_positions} concurrent positions reached"
+        elif settings.max_positions_per_sector > 0 and (
+            sector_counts.get(candidate.sector, 0) >= settings.max_positions_per_sector
+        ):
+            reason = "sector concentration"
+            detail = (
+                f"maximum {settings.max_positions_per_sector} open positions in "
+                f"{candidate.sector or 'unknown sector'} reached"
+            )
+        elif plan is not None and settings.account_equity_inr is not None:
+            candidate_risk = plan.quantity * abs(plan.entry - plan.stop)
+            max_heat = settings.account_equity_inr * settings.max_portfolio_heat_pct / 100
+            if heat_inr + candidate_risk > max_heat:
+                reason = "portfolio heat"
+                detail = (
+                    f"would raise open risk to ₹{heat_inr + candidate_risk:,.0f}, above "
+                    f"{settings.max_portfolio_heat_pct:.1f}% of equity (₹{max_heat:,.0f})"
+                )
+        if reason:
+            candidate.rejected_by = reason
+            candidate.reject_detail = detail
+            portfolio_demoted.append(candidate)
+            continue
+        accepted.append(candidate)
+        sector_counts[candidate.sector] = sector_counts.get(candidate.sector, 0) + 1
+        if plan is not None:
+            heat_inr += plan.quantity * abs(plan.entry - plan.stop)
+
+    scan.trades = accepted
+    scan.near_miss = portfolio_demoted + scan.near_miss
+
     if max_per_day > 0 and len(scan.trades) > max_per_day:
         for demoted in scan.trades[max_per_day:]:
             demoted.rejected_by = "daily cap"
@@ -576,6 +675,19 @@ def run_v3_scan(
             )
         scan.near_miss = scan.trades[max_per_day:] + scan.near_miss
         scan.trades = scan.trades[:max_per_day]
+
+    # A model is descriptive on an ordinary scan: it adds measured probabilities without
+    # silently changing the historical V3 output. `v3-monitor` invokes the same annotator
+    # in strict mode and demotes anything that is stale, unvalidated or below the funding
+    # gates.
+    try:
+        from ..v3_probability import MODEL_PATH, apply_to_scan, load as load_probability
+
+        if MODEL_PATH.exists():
+            apply_to_scan(scan, load_probability(), strict=False)
+    except Exception as exc:  # noqa: BLE001 — a broken model must not break a scan
+        scan.probability_model_status = f"unavailable: {exc}"
+        logger.warning(f"[v3] probability model unavailable: {exc}")
 
     # The 60m read is no longer a postscript: it ran as the carry gate in stage 2a, before
     # any name could qualify, and `hourly_note` was filled there.
