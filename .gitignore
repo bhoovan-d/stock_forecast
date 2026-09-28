@@ -6,6 +6,8 @@ data/cache/
 data/*.db
 data/briefs/
 data/logs/
+data/fno_momentum/
+systems/runtime/
 .pytest_cache/
 .coverage
 
@@ -21,3 +23,14 @@ v3_final.txt
 v3_reclaim.txt
 bt.txt
 oos.txt
+
+# Trident live-monitor output. High-volume machine logs — a session of 5m passes over the
+# NIFTY 500 writes thousands of failure rows. The forward record (data/trident_watch.jsonl)
+# is deliberately NOT ignored: that one is accumulating evidence, not run output.
+data/trident_alerts.jsonl
+data/trident_failures.jsonl
+
+# Scratch: Task Scheduler before-state XML backups, one-off PDF build scripts and their PNG
+# previews. output/pdf/ is deliberately NOT ignored — it holds delivered reports that exist
+# nowhere else in the repo.
+tmp/

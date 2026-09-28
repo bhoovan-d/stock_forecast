@@ -247,29 +247,41 @@ judgement; it does not predict outcomes, and no output here is a recommendation 
 
 ---
 
-## Specification V3 — the current engine
+## Reliability-first strategy
 
-`NIFTY 500 Asymmetry Engine.pdf` supersedes the earlier docx brief. Both directions, a stop
-*band* rather than a ceiling, and roughly 10–15 setups a **month** rather than a daily list.
+The production research rule is deliberately narrow: long-only NSE cash sweep-and-reclaim,
+a 0.5–1.5% structural stop, a fixed 2R target, and a five-session maximum hold. Frequency is
+not optimized. Missing data or failed evidence means no qualified paper signal.
 
 ```bash
 uv run asymmetry v3                      # full NIFTY 500 scan, ~8 min
-uv run asymmetry v3 --setup reclaim      # only setups with standalone support
-uv run asymmetry v3-backtest             # does any of it actually pay?
+uv run asymmetry v3-backfill-intraday --symbols-file data/universe-2026-07-13.json --start 2024-09-10 --end 2026-09-10
+uv run asymmetry v3-calibrate --symbols-file data/universe-2026-07-13.json
+uv run asymmetry v3-monitor --once        # validated paper alerts only
 ```
+
+Calibration accepts only the immutable Upstox 15-minute store with at least two years of
+coverage for every sampled symbol. Development, validation and final tests are chronological
+and embargoed. Approval requires at least 100 untouched trades, 30 symbols and 100 sessions,
+a 70% measured 2R hit rate, a 60% Wilson lower bound, +0.40R conservative expected profit
+after costs, positive regime cohorts, and concentration/drawdown limits.
+
+`v3-monitor` additionally requires authenticated live Upstox bars, completed candles, an
+unexpired approved model, and executable next-bar geometry. Signals and outcomes are stored
+as hash-chained append-only events. At least 30 completed paper signals over at least six
+months must pass again. This implementation remains paper-only and places no orders.
 
 | | Daily screen | Engineer Brief | **V3** |
 | --- | --- | --- | --- |
-| Direction | long | long | **long + short** |
-| Minimum R:R | 2.0 | 4.0 | **4.0** |
+| Direction | long | long | **long-only production** |
+| Target | 2.0 | 4.0 | **fixed 2R** |
 | Stop | none | ≤1.4% | **0.5–1.5% band** |
-| Output | shortlist | daily | **~10–15 / month** |
-| Setups | breakout | generic | **sweep + flag + base breakout** |
+| Output | shortlist | daily | **zero or one per scan; no quota** |
+| Setups | breakout | generic | **long sweep-and-reclaim only** |
 
-Selection follows V3's hierarchy — right market → right sector → right stock → right time →
-right risk/reward — with sector leadership as a **score, not a gate**. §16 names the hard
-filters exactly (4R, stop distance, liquidity, technical validity) and nothing else may
-reject. Gating on sector is what made an earlier build discard valid candidates.
+Composite scores, catalysts, carry and regime remain recorded research features. They cannot
+rescue or veto the fixed rule. Qualification comes from explicit data, geometry, execution
+and independent evidence checks.
 
 ### Three timeframes, three jobs
 
@@ -286,7 +298,7 @@ continuation regime with enough fuel to hold 1–5 sessions, or there is no trad
 **Missing 60m data fails closed.** An unproven regime is not the same as an acceptable one:
 a name whose higher-timeframe read simply failed to fetch used to publish anyway.
 
-### Does V3 work? Measured on real 15-minute triggers
+### Legacy V3 measurements (audit history only)
 
 `v3-backtest` replays the engine's own entries — same `detect_setup`, same `build_v3_plan`,
 same `assess_carry` — resolved on 15-minute bars, with a bar touching both stop and target
