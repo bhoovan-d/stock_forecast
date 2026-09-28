@@ -30,8 +30,12 @@ permissions:
 
 jobs:
   brief:
+    # Governance freeze approved by Aditya Lakhotia on 2026-09-16. Preserve this
+    # workflow for audit history, but do not run collection, strategy, LLM, or
+    # publication steps until a later exact approval removes this guard.
+    if: ${{ false }}
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 90
 
     steps:
       - uses: actions/checkout@v4
@@ -90,6 +94,9 @@ jobs:
       - name: Settle open journal entries
         run: python -m asymmetry.cli journal settle
 
+      - name: Settle V3 forward record
+        run: python -m asymmetry.cli v3-watch --settle-only
+
       - name: Generate brief and dashboard
         env:
           # Optional. With none set, catalyst scoring is skipped and the rest still runs —
@@ -105,10 +112,10 @@ jobs:
           python -m asymmetry.cli brief --html --top 10 $REFRESH
 
       - name: Specification V3 scan
-        # Runs after the brief so a V3 failure cannot cost the day's brief. The scan is
-        # network-paced across ~270 candidates, hence the generous timeout.
-        continue-on-error: true
-        timeout-minutes: 20
+        # Runs after the brief and must succeed before publication. It used to be hidden by
+        # continue-on-error, which let the site publish yesterday's V3 page while CI looked
+        # green. The scan is network-paced and retries throttled symbols, hence the timeout.
+        timeout-minutes: 45
         env:
           CEREBRAS_API_KEY: ${{ secrets.CEREBRAS_API_KEY }}
           GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
@@ -142,6 +149,7 @@ jobs:
           git config user.name  "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add public/
+          if [ -f data/v3_watch.jsonl ]; then git add data/v3_watch.jsonl; fi
           if git diff --cached --quiet; then
             echo "No change to publish (market holiday, or brief unchanged)."
             exit 0

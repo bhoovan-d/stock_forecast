@@ -41,6 +41,10 @@ permissions:
 
 jobs:
   watch:
+    # Governance freeze approved by Aditya Lakhotia on 2026-09-16. Preserve this
+    # workflow for audit history, but do not run strategy or forward-record steps
+    # until a later exact approval removes this guard.
+    if: ${{ false }}
     runs-on: ubuntu-latest
     timeout-minutes: 30
 
