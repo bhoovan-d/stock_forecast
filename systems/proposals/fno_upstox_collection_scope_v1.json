@@ -1,0 +1,66 @@
+{
+  "manifest_id": "fno-upstox-collection-scope-v1",
+  "kind": "collection_scope",
+  "version": "1",
+  "status": "superseded_before_activation_by_fno-upstox-reliance-quality-pilot-v1",
+  "provider": "Upstox Analytics Token",
+  "approved_scope": {
+    "exchange_segment": "NSE_FO",
+    "required_underlying_type": "EQUITY",
+    "excluded_underlying_types": [
+      "INDEX",
+      "ETF"
+    ],
+    "underlying_membership": "all currently eligible NSE single-stock F&O underlyings",
+    "option_instrument_types": [
+      "CE",
+      "PE"
+    ],
+    "contract_coverage": "every currently listed strike and expiry"
+  },
+  "approved_boundaries": {
+    "purpose": "private local data collection and data-quality research only",
+    "public_software": false,
+    "redistribution": false,
+    "telegram": false,
+    "alerts": false,
+    "orders": false,
+    "trading": false,
+    "strategy_or_hypothesis_activity": false,
+    "ai_learning": false
+  },
+  "timestamp_treatment": {
+    "record_provider_timestamp": true,
+    "record_last_trade_timestamp": true,
+    "record_local_utc_receipt_timestamp": true,
+    "bbo_change_timestamp_available": false,
+    "limitation": "Do not treat provider or last-trade time as proof of the time of the most recent best-bid or best-ask change."
+  },
+  "approved_cadence": {
+    "snapshot_interval_seconds": 60,
+    "coverage": "one complete batched quote snapshot of the approved universe per interval",
+    "execution_claim": "This is snapshot research data and must not be represented as tick-level or executable-price evidence."
+  },
+  "approved_schedule": {
+    "timezone": "Asia/Kolkata",
+    "trading_days": "NSE trading days only",
+    "start_time_inclusive": "09:15:00",
+    "end_time_inclusive": "15:30:00",
+    "pre_market_collection": false,
+    "after_market_collection": false,
+    "overnight_collection": false
+  },
+  "approved_retention": {
+    "compressed_raw_responses_days": 30,
+    "normalized_quotes_and_quality_results_years": 3,
+    "cloud_backup": false,
+    "external_sharing": false,
+    "deletion": "delete expired records automatically according to their respective retention period"
+  },
+  "not_yet_approved": [
+    "exact storage layout",
+    "routine collector activation"
+  ],
+  "evidence": "Aditya Lakhotia approved all currently eligible NSE single-stock F&O underlyings, every currently listed CE/PE strike and expiry, a 60-second complete-snapshot cadence, collection from 09:15 through 15:30 Asia/Kolkata on NSE trading days, 30-day raw retention, and three-year normalized/quality retention in the controlling conversation on 2026-09-19.",
+  "does_not_prove": "The approved scope does not prove data completeness, quote freshness, executable prices, liquidity, slippage, costs, paper P&L, or a trading edge."
+}

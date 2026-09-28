@@ -1,0 +1,205 @@
+{
+  "manifest_id": "fno-full-underlying-data-collection-v5",
+  "kind": "read_only_data_foundation",
+  "version": "5",
+  "status": "authorized_data_acquisition_2026-09-23",
+  "decision_authority": "Aditya Lakhotia",
+  "proposal_date": "2026-09-22",
+  "proposed_source_manifest": "fno_source_upstox_underlying_v1.json",
+  "authorization_to_prepare": "C:\\Users\\bhoov\\Downloads\\accept_universe_baseline_and_prepare_full_fno_manifest.md",
+  "accepted_baseline": {
+    "captured_at_utc": "2026-09-22T17:37:22.789862+05:30",
+    "active_underlying_count": 210,
+    "current_stock_option_contract_count": 30065,
+    "universe_hash": "56627fd32bbc5662f9d7fcf9117f7c558d93a0311fec651e0b3657108932ac40",
+    "limitation": "A current snapshot does not reconstruct historical FnO eligibility or membership."
+  },
+  "activation": {
+    "permitted_now": true,
+    "authorization_evidence": "User-authorized ongoing controlled acquisition; v5 records a bounded recovery for the public instrument master after a single source failure caused full-session loss on 2026-09-24. No source or data scope expansion.",
+    "scheduled_job_enabled": true,
+    "token_access_permitted_now": true,
+    "missed_start_date_rule": "Start with the first observed session after activation; record any missed scheduled cycle as missing. Never backdate or synthesize observations.",
+    "historical_bulk_job_enabled": false
+  },
+  "scope": {
+    "track": "FnO Momentum only",
+    "underlyings": "Every unique NSE_EQ underlying_key with at least one current NSE_FO CE or PE and underlying_type EQUITY in the latest approved NSE instrument-master snapshot; record the exact snapshot hash for each run.",
+    "option_data": "Current contract reference metadata only; no routine option quote, chain or BBO capture.",
+    "historical_ohlcv": [
+      {
+        "interval": "1 day",
+        "from_date_inclusive": "2000-01-01",
+        "to_date_inclusive": "2026-09-21",
+        "request_window": "At most one calendar decade per request; split into nonoverlapping windows.",
+        "provider_limit": "Upstox states daily history is available from January 2000, subject to the individual instrument's actual history."
+      },
+      {
+        "interval": "15 minutes",
+        "from_date_inclusive": "2022-01-01",
+        "to_date_inclusive": "2026-09-21",
+        "request_window": "At most one calendar month per request; split into nonoverlapping windows.",
+        "provider_limit": "Upstox states minute history is available from January 2022, subject to individual instrument history."
+      },
+      {
+        "interval": "5 minutes",
+        "from_date_inclusive": "2022-01-01",
+        "to_date_inclusive": "2026-09-21",
+        "request_window": "At most one calendar month per request; split into nonoverlapping windows.",
+        "provider_limit": "Upstox states minute history is available from January 2022, subject to individual instrument history."
+      }
+    ],
+    "ongoing": {
+      "first_proposed_session_date": "2026-09-23",
+      "market_window_ist": "09:15:00-15:30:00 on an observed NSE equity trading session",
+      "underlying_full_quote_cadence": "One scheduled quote snapshot cycle at 09:15, 09:20, ..., 15:30 IST inclusive (76 cycles per observed session). Snapshot time is the scheduled slot; each row also carries request start/end, local receipt and provider/last-trade timestamps. A snapshot is not a five-minute OHLCV candle.",
+      "completed_candles": "Provider five-minute candles are 75 nonoverlapping exchange-session intervals [09:15,09:20), ..., [15:25,15:30), timestamped by start; 15-minute candles are 25 intervals. Retrieve only completed provider candles after close with explicit retrieval delay, and the provider daily candle after close. The 15:30 quote cycle is a closing snapshot, never an extra candle. Do not synthesize OHLCV from sparse quotes.",
+      "weekly_derivation": {
+        "version": "nse-session-daily-to-weekly-v1",
+        "week_boundary": "Asia/Kolkata Monday 00:00 through following Monday 00:00; label by Monday date, including shortened holiday weeks",
+        "rule": "Use only valid approved daily bars for observed NSE sessions: open first, high maximum, low minimum, close last, volume sum; emit no weekly bar if any expected session daily bar is missing or invalid; retain constituent dates and source hashes."
+      },
+      "instrument_master_cadence": "Retrieve the current NSE instrument master at 09:15 IST before the first quote slot on each observed trading session; record retrieval completion time and snapshot hash. If unavailable, mark that slot and later slots unverified until a fresh master arrives; never carry yesterday membership forward as verified.",
+      "clock": "Store request start, request end, local UTC receipt, provider response timestamp, exchange or last-trade timestamp when supplied, and deterministic collection order."
+    },
+    "historical_collection_mode": "On-demand underlying OHLCV requests by explicitly selected stock, interval and date window through the approved Upstox historical-candle API. No scheduled all-universe backfill. Unrequested windows are UNFETCHED, not missing bars. Preserve existing collected data and audit events."
+  },
+  "provider": {
+    "name": "Upstox",
+    "credential": "Operator-owned read-only Analytics Token in Windows Credential Manager; not requested or used by this proposal.",
+    "allowed_methods": [
+      "GET"
+    ],
+    "proposed_endpoint_allowlist": [
+      "https://assets.upstox.com/market-quote/instruments/exchange/NSE.json.gz",
+      "https://api.upstox.com/v3/historical-candle/{NSE_EQ_key}/days/1/{to_date}/{from_date}",
+      "https://api.upstox.com/v3/historical-candle/{NSE_EQ_key}/minutes/15/{to_date}/{from_date}",
+      "https://api.upstox.com/v3/historical-candle/{NSE_EQ_key}/minutes/5/{to_date}/{from_date}",
+      "https://api.upstox.com/v3/historical-candle/intraday/{NSE_EQ_key}/minutes/15",
+      "https://api.upstox.com/v3/historical-candle/intraday/{NSE_EQ_key}/minutes/5",
+      "https://api.upstox.com/v3/historical-candle/intraday/{NSE_EQ_key}/days/1",
+      "https://api.upstox.com/v3/market-quote/quotes?instrument_key={up_to_500_NSE_EQ_keys}"
+    ],
+    "request_rate_ceiling_proposed": "Serialized at no more than 2 requests/second, 100/minute and 1000/30 minutes; stop on provider 429 instead of retrying. These are local ceilings below documented standard-API limits, not a guarantee of provider access.",
+    "official_documents": [
+      "https://upstox.com/developer/api-documentation/instruments/",
+      "https://upstox.com/developer/api-documentation/v3/get-historical-candle-data/",
+      "https://upstox.com/developer/api-documentation/v3/get-intra-day-candle-data/",
+      "https://upstox.com/developer/api-documentation/get-full-market-quote-v3/",
+      "https://upstox.com/developer/api-documentation/rate-limiting/"
+    ]
+  },
+  "membership_and_reference_handling": {
+    "as_observed": "Each master is effective only from its retrieval timestamp. Compare consecutive snapshots for additions, disappearances, symbol/key changes and option-contract first/last seen dates.",
+    "eligibility": "Do not convert a first/last observed date into an official NSE eligibility date. Mark the true eligibility date unknown until a separately approved historical NSE source establishes it.",
+    "missing_master": "Record coverage failure; do not carry yesterday's universe forward as today's verified active universe.",
+    "contract_reference": "Keep a permanent compressed, content-addressed snapshot of current stock-option contract ID, CE/PE, strike, expiry, lot and tick size; no option BBO.",
+    "historical_membership_source": "NSE F&O eligibility circulars/reports are an identified but unapproved separate source; no ingestion or historical eligibility claim in this manifest."
+  },
+  "external_reference_sources": [
+    {
+      "purpose": "corporate actions and symbol changes",
+      "candidate_source": "NSE Corporate Actions and NSE securities/circular records",
+      "source_url": "https://www.nseindia.com/companies-listing/corporate-filings-actions",
+      "status": "identified_not_approved",
+      "proposed_fields": [
+        "symbol",
+        "company name",
+        "purpose",
+        "ex-date",
+        "record date",
+        "book closure dates",
+        "publication or first-seen timestamp",
+        "source URL and hash"
+      ],
+      "handling": "Record events and discontinuities. Never silently adjust or overwrite provider OHLCV. Price-adjustment method requires separate approval."
+    },
+    {
+      "purpose": "effective-dated sector mapping",
+      "candidate_source": "NSE Indices industry classification",
+      "source_url": "https://www.niftyindices.com/resources/industry-classification",
+      "status": "identified_not_approved",
+      "proposed_fields": [
+        "underlying identifier",
+        "macro-economic sector",
+        "sector",
+        "industry",
+        "basic industry",
+        "source publication or first-seen timestamp",
+        "source URL and hash"
+      ],
+      "handling": "Do not backdate a current classification. Record changes only from a dated approved source."
+    }
+  ],
+  "quality_and_failure_controls": {
+    "coverage": "Report by underlying, session, interval and request window: expected membership from the relevant approved snapshot, requested rows, returned rows, missing instruments, missing sessions/bars where a calendar is approved, and unknown expectations otherwise.",
+    "row_checks": [
+      "duplicate timestamps",
+      "malformed rows",
+      "schema fingerprints and changes",
+      "invalid OHLCV",
+      "negative or anomalous volume",
+      "zero/sentinel timestamps",
+      "future or stale timestamps",
+      "provider/exchange/local clock skew",
+      "corporate-action, symbol, expiry and membership discontinuities"
+    ],
+    "quote_checks": [
+      "missing underlying quote",
+      "zero or invalid price/volume",
+      "provider timestamp absent/stale",
+      "last-trade timestamp absent/stale",
+      "unexpected NSE_EQ key"
+    ],
+    "cycle_timing": "Use UTC wall-clock request_start, response_end and receipt per HTTP batch plus monotonic elapsed milliseconds. Store scheduled slot and per-batch lateness (request_start minus slot), completion delay (last receipt minus slot), provider timestamp lag (receipt minus provider timestamp), last-trade lag separately, and range of provider timestamps across rows. Never label a shared HTTP receipt as per-instrument arrival skew; per-instrument network-arrival skew is unobservable within a batch.",
+    "missing_history": "For each requested stock/window/interval record response status, row count and exact invalid or absent in-session bar starts against an approved historical session calendar where available. Distinguish pre-listing/unknown historical eligibility from confirmed missing bars. Empty provider windows remain empty; no fabricated bar, carry-forward, alternative source or automatic retry.",
+    "failure_behavior": "Append every source failure, invalid timestamp, missing bar, partial batch, missed slot and delay. For a failed daily instrument master only, make at most one new GET attempt every 15 minutes while the exchange session remains open, up to 26 attempts, recording each failure and attempt. Do not carry yesterday membership as verified. Other failed windows are not silently retried. No gap filling, substitution or catch-up snapshots.",
+    "quality_role": "Descriptive only; no trading, strategy or model threshold.",
+    "master_recovery": "At 09:15 IST try the approved public NSE master; if unavailable, record source and coverage failure and retry at most every 15 minutes until 15:30 IST, maximum 26 attempts. Quote cycles remain missed until a fresh daily master succeeds."
+  },
+  "storage": {
+    "root": "C:\\adiproj2\\data\\fno_momentum\\upstox\\full_underlying_foundation_v1",
+    "format": "Immutable content-addressed gzip raw HTTP payloads; separate versioned compressed normalized OHLCV/reference partitions; append-only SQLite audit and permanent coverage/quality summaries.",
+    "planning_estimate": "Full requested history for 210 current underlyings may require roughly 3-8 GiB across raw and normalized forms, exceeding the 3 GiB total cap. Measure actual bytes per batch; collect controlled windows until the historical soft limit, then mark unfetched older windows and source them on demand within this same underlying-only scope. No completeness claim is made for deferred windows.",
+    "maximum_total_bytes": 3221225472,
+    "historical_batch_size_underlyings": 5,
+    "maximum_batch_increment_bytes": 134217728,
+    "ceiling_scope": "All files under this manifest's storage root, including raw, normalized, reference and ledger files.",
+    "ceiling_behavior": "Hard 3 GiB limit includes raw, normalized, reference, logs, lock files and SQLite ledger under this root. Reserve 32 MiB for audit growth; check actual full-root usage under a cross-process write lock before every payload write. Historical lane has a 2 GiB soft allocation; stop and log remaining windows before it impinges on ongoing collection. Never silently truncate or raise the limit.",
+    "raw_retention_days": 7,
+    "permanent": [
+      "approved manifest and source/parser/code versions",
+      "raw and normalized content hashes",
+      "source identity and collection timestamps",
+      "instrument counts",
+      "coverage and quality reports",
+      "failure and outage records",
+      "deletion-intent and deletion-completion/failure records"
+    ],
+    "deletion_procedure": "fno_momentum.retention_audit; dry-run by default. Example: for raw observation abc retrieved 2026-09-23T10:00:00Z, no deletion before 2026-09-30T10:00:00Z; verify exact path, SHA-256, manifest hash, source observation and linked quality event, append raw_deletion_intended before unlink, then raw_deletion_completed with actual UTC time and bytes. On failure append raw_deletion_failed; reconcile an interrupted intent manually. Never delete normalized reference or audit ledger under the raw-retention rule.",
+    "no_cloud_backup": true,
+    "no_external_sharing": true,
+    "historical_soft_cap_bytes": 2147483648,
+    "forward_normalized_retention_days": 90,
+    "older_history_policy": "Request needed underlying OHLCV windows on demand through the approved Upstox historical-candle API within the 3 GiB cap. No new scraper or source is authorized by this revision. Historical windows not requested are explicitly UNFETCHED, not treated as provider gaps."
+  },
+  "exclusions": [
+    "strategy, indicator, pattern, threshold, candidate, ranking or hypothesis",
+    "AI learning, model, scoring or feature work",
+    "continuous all-option-contract BBO or option-chain capture",
+    "paper trade, option P&L, costs, stops, targets or alerts",
+    "Telegram, broker order, execution or funded trading",
+    "NIFTY500 Source News or sentiment inputs"
+  ],
+  "acceptance_report_required_before_any_hypothesis": [
+    "effective-dated universe coverage and unresolved historical eligibility",
+    "daily, 15-minute and 5-minute coverage by stock/session",
+    "missingness, outages, schema and timestamp/timing-skew distributions",
+    "corporate-action and sector-source status and discontinuities",
+    "contract reference coverage and storage usage",
+    "raw-retention/deletion audit and reproducibility",
+    "what the foundation proves and does not prove"
+  ],
+  "does_not_prove": "Historical FnO membership or official eligibility dates, complete provider history for every stock, adjusted-price correctness, sector history, option BBO or liquidity, executable fills, paper P&L, strategy edge, and future performance.",
+  "supersedes": "v4; daily instrument-master recovery after 2026-09-24 public asset TLS/transport outage"
+}

@@ -1,0 +1,118 @@
+# Final Engineer Direction for Trading Systems
+
+## Binding direction
+
+This note supersedes conflicting wording in prior proposals.
+
+Build two separate paper-trading research systems:
+
+1. **FnO Options Momentum Track** for NSE FnO stocks using underlying-price patterns and long option positions.
+2. **NIFTY 500 Source News Track** for independent source-based and news-based trading research across NIFTY 500 stocks.
+
+The tracks must never share candidates, rules, model scores, model training data, cohorts, win rate, P and L, promotion evidence, or alert decisions. Any shared infrastructure requires prior approval from Aditya Lakhotia and must preserve strict track identity in every record.
+
+Neither system places broker orders, sizes accounts, writes options, or enables funded trading.
+
+## Clean room requirement
+
+Build both new systems cleanly. Existing V3, Trident, daily briefs, journals, reports, caches, backtests, model files, score thresholds, pattern definitions, configuration, and historical results are not implementation dependencies.
+
+Existing work may be consulted only for inspiration after Aditya Lakhotia explicitly approves examining a specific idea. An adopted idea becomes a new written hypothesis with a new definition, version, test plan, and fresh evidence. Do not copy old code, data, thresholds, historical performance, or defaults.
+
+Remove the statement that the new FnO system will reuse existing point-in-time, replay, pattern, or reporting code.
+
+## Non negotiable constants
+
+| Constant | Required behavior |
+| --- | --- |
+| `CLEAN_ROOM_ONLY` | No legacy code, data, defaults, thresholds, models, reports, or metrics may enter either new track. Inspiration requires prior approval. |
+| `ADITYA_APPROVAL_REQUIRED` | No source, pattern, threshold, feature, model, cost policy, contract policy, or live behavior may activate or change without explicit approval from Aditya Lakhotia. |
+| `PAPER_ONLY` | No broker order placement, account sizing, option writing, or funded-trading path exists. |
+| `POINT_IN_TIME_ONLY` | An observation may affect a decision only when `available_at <= decision_at`. |
+| `IMMUTABLE_LEDGER` | Candidate, alert, fill, rejection, correction, approval, and outcome records append new events. Original payloads are never overwritten. |
+| `APPROVED_SOURCES_ONLY` | Collect only from approved, lawful public or licensed sources in the source registry. AI may propose a source but cannot use it. |
+| `FAIL_CLOSED` | Missing, stale, contradictory, unapproved, or unverifiable data blocks the affected paper alert. |
+| `TRACK_ISOLATION` | Core FnO Momentum and NIFTY 500 Source News records, models, metrics, and decisions remain separate. No cross-track score, feature, outcome, or promotion logic is allowed. |
+| `VERSIONED_CHANGE_CONTROL` | Every approved change has a version, content hash, rationale, evidence, approval event, and a new forward cohort where applicable. |
+
+## FnO Options Momentum Track
+
+### Scope
+
+- Universe is a date-versioned NSE FnO stock list. Exclude index and ETF contracts.
+- Signals come from the underlying stock. Buy calls for bullish signals and buy puts for bearish signals.
+- The underlying defines the setup, structural stop, target, and R calculation. Options use executable quotes for paper P and L.
+- Structural stop distance is 0.5 to 3.0 percent and is never widened to qualify a trade.
+- Exit the option on an underlying stop, chosen R target, three completed NSE-session expiry, or a 50 percent option-premium loss guard.
+- Buy fills use observable ask quotes. Exit fills use the next observable bid. Use lower-timeframe evidence for a stop/target conflict; otherwise record stop first.
+- Study a broad 2R cohort with 1 to 2 percent stops and 2 to 4 percent underlying moves. Publish Core Paper Alerts only for candidates predicted to make a 6 to 8 percent underlying move in two to three completed sessions.
+- Publish at most one Core Paper Alert per NSE session and hold at most two concurrent paper positions.
+
+### Pattern families
+
+| Family | Rule |
+| --- | --- |
+| Continuation breakout | Measure directional continuation after a controlled consolidation and expansion. |
+| Episodic pivot | Measure catalyst-associated revaluation and continuation using time-stamped approved evidence. |
+| Parabolic reversal | Measure confirmed reversals after an extended move separately from continuation. |
+| Liquidity sweep | Require a prior daily or weekly swing level, multi-touch shelf, or prior-session level. Test reversal/reclaim and continuation separately. |
+
+All pattern families must keep long and short direction results separate. Test five-minute and fifteen-minute entry variants separately. AI may propose new variants, but cannot activate them without Aditya approval, offline evidence, and a new versioned cohort.
+
+### Core model and data
+
+- Keep stock regime and sector regime as timestamped model features. Do not add a broad-market hard gate without separate approval.
+- Raw time-series and vision models are separate experiments. A combined model may activate only after it improves untouched results over both standalone models.
+- Vision training uses system-generated point-in-time charts for every candidate and rejection. Human-curated charts are educational only and cannot enter scored training or evaluation.
+- Option selection is restricted to approved liquid ATM through one-step ITM stock options with 7 to 30 days to expiry. Exact liquidity thresholds, contract ranking, and model choices remain inactive proposals until approved.
+- Keep every pattern family, direction, and entry-timeframe cohort separate. Do not pool weak groups into stronger aggregates.
+- The operational pilot threshold is 25 untouched historical outcomes and 20 immutable forward paper alerts for each pattern-direction pair. It is a 50 percent target, not proof of a 50 percent true win rate.
+
+### Portfolio evidence
+
+AI may permit or reject related positions only when it records sector/correlation evidence, incremental portfolio risk, rank comparison, model version, and a reason in the immutable ledger. The governing portfolio policy must be versioned and approved.
+
+## NIFTY 500 Source News Track
+
+### Scope
+
+This is a separate NIFTY 500 paper-trading research system for source-based and news-based ideas. It does not wait for the Liquidity Sweep implementation and does not function as a sentiment gate or feature inside FnO Options Momentum.
+
+The engineer must propose its trading mechanics, source categories, candidate definitions, model policy, timeframes, entry and exit policy, and reporting design as a separate versioned design proposal. Do not infer those rules from the FnO Options Momentum Track.
+
+### Required separation
+
+- Maintain its own approved source registry, raw observations, availability times, candidate lifecycle, model manifests, ledger event stream, dashboard view, Telegram label, cohorts, metrics, and promotion evidence.
+- Do not use a source/news candidate to rank, qualify, reject, train, validate, or explain an FnO Options Momentum candidate.
+- Do not combine Core Momentum and NIFTY 500 Source News alerts, outcomes, win rate, P and L, drawdown, or promotion statistics.
+- Any AI-proposed source requires a registry proposal including lawful access basis, terms, cost, data fields, collection method, retention policy, and Aditya approval before collection begins.
+- Record source publication time, retrieval time, content hash, parser or model version, and the exact information available at every decision time.
+
+## Build order
+
+### Shared new foundations
+
+1. Create clean-room repository boundaries, source registry, immutable event contracts, approval flow, and CI isolation checks.
+2. Ensure CI fails if either new track imports a legacy package, reads a legacy path, references legacy storage, or uses legacy data/configuration.
+
+### FnO Options Momentum vertical slice
+
+1. Build one Liquidity Sweep reference slice with a daily or weekly anchor.
+2. Implement point-in-time underlying data, option ask entry, option bid exit, rejection handling, event hashes, and dashboard evidence.
+3. Reconcile source observation, candidate, rejection or alert, paper order, fill, and settlement before expanding pattern coverage.
+
+### NIFTY 500 Source News vertical slice
+
+1. Submit and approve the separate source/news design proposal.
+2. Build its approved source collection, point-in-time content contract, independent candidate event lifecycle, and source-evidence dashboard.
+3. Validate one source/news reference slice end to end before broadening sources or introducing model variants.
+
+## Cost governance
+
+The initial expectation for all recurring costs is INR 2,000 to 4,000 per month. Any higher recurring cost requires a vendor comparison, written justification, and explicit approval from Aditya Lakhotia.
+
+## Definition of done
+
+For either track, a reviewer must be able to open an alert or rejection and trace it to approved sources, raw observations, availability times, active manifest versions, reason codes, event hashes, and settlement evidence. If this trace cannot be produced, the feature is not complete.
+
+Do not infer missing thresholds or silently activate defaults. Submit a versioned proposal whenever a required decision has not been explicitly approved.

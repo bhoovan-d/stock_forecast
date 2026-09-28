@@ -1,0 +1,22 @@
+{
+  "manifest_id": "fno-universe-policy-v1",
+  "kind": "universe_policy",
+  "version": "1",
+  "definition": {
+    "exchange_segment": "NSE_FO",
+    "option_instrument_types": [
+      "CE",
+      "PE"
+    ],
+    "required_underlying_type": "EQUITY",
+    "excluded_underlying_types": [
+      "INDEX",
+      "ETF"
+    ],
+    "membership_rule": "at_least_one_current_stock_option_contract"
+  },
+  "evidence": "Binding stock-only scope plus clean-room Upstox discovery snapshot: 210 equity underlyings, 237890 daily candles, data-quality profile 724673b046e2df21222242e10cd920d6c95376df073a1809447464094a304c76, zero hash/duplicate/malformed/OHLC failures.",
+  "expected_benefit": "Create a reproducible date-versioned NSE stock-option universe while excluding index and ETF contracts.",
+  "risks": "Current contract availability does not reconstruct historical FnO membership; every snapshot is valid only from its recorded retrieval time.",
+  "test_plan": "Verify CE/PE inclusion, EQUITY-only underlying filter, index/ETF exclusion, deterministic member hashing, raw observation lineage, and daily snapshot versioning."
+}

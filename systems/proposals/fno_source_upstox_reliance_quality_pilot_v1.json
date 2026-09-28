@@ -1,0 +1,17 @@
+{
+  "source_id": "upstox-read-only-market-data-v3",
+  "name": "Upstox Read-Only Market Data V3 — RELIANCE Quality Pilot",
+  "source_type": "authenticated_free_broker_market_data",
+  "lawful_access_basis": "Private local research through the operator-owned Upstox account and read-only Analytics Token; no display, redistribution, alerts, orders, or trading.",
+  "terms_reference": "https://upstox.com/developer/api-documentation/analytics-token/",
+  "fields": [
+    "current NSE instrument and contract metadata for RELIANCE",
+    "current RELIANCE underlying and option best bid, best ask, quantities, open interest, and volume",
+    "provider timestamp, last-trade timestamp, local UTC receipt timestamp, and raw content hash"
+  ],
+  "latency": "Twenty request-time snapshots at sixty-second intervals during one approved market-hours pilot; no tick-level or executable-price claim.",
+  "monthly_cost_inr": 0,
+  "collection_method": "GET-only access to the NSE instrument master and Upstox V3 full-market-quote endpoint under an in-process host, method, path, and query allowlist.",
+  "retention_policy": "Private local pilot storage only; maximum 250 MB; raw responses deleted after seven days; no cloud backup or external sharing.",
+  "version": "1"
+}

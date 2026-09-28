@@ -1,0 +1,59 @@
+{
+  "manifest_id": "fno-upstox-universe-foundation-v1",
+  "kind": "data_foundation",
+  "version": "1",
+  "status": "approved_for_metadata_baseline_only",
+  "decision_authority": "Aditya Lakhotia",
+  "approval_date": "2026-09-22",
+  "authorization_evidence": "User-supplied Next Step: FnO Universe-Wide Data Foundation authorization",
+  "purpose": "Build the auditable raw-data foundation for all active NSE FnO stock underlyings without strategy, AI, alerts, paper trading or execution.",
+  "active_phase": {
+    "name": "current_universe_and_contract_metadata_baseline",
+    "allowed_endpoints": [
+      "GET https://assets.upstox.com/market-quote/instruments/exchange/NSE.json.gz"
+    ],
+    "credential_required": false,
+    "outputs": [
+      "effective-dated current FnO stock-underlying universe",
+      "current stock-option contract reference snapshot",
+      "raw content hash and source identity",
+      "coverage and data-quality report"
+    ]
+  },
+  "approved_but_blocked_pending_exact_parameters": {
+    "historical_daily_ohlcv": ["start date", "end date"],
+    "historical_15_minute_ohlcv": ["start date", "end date"],
+    "historical_5_minute_ohlcv": ["start date", "end date"],
+    "ongoing_underlying_collection": ["cadence", "session window", "start date", "storage ceiling"],
+    "sector_mapping": ["approved source", "effective-date method"],
+    "corporate_actions_and_symbol_changes": ["approved source", "event fields", "adjustment policy"]
+  },
+  "storage": {
+    "root": "C:\\adiproj2\\data\\fno_momentum\\upstox\\universe_foundation_v1",
+    "raw_retention_days": 7,
+    "permanent_audit_retention": true,
+    "cloud_backup": false,
+    "external_sharing": false
+  },
+  "quality_controls": [
+    "missing required contract fields",
+    "duplicate contract identifiers",
+    "malformed rows",
+    "schema fingerprint and schema changes",
+    "invalid expiry, strike, lot size and tick size",
+    "missing underlying identifiers",
+    "provider failures recorded without retry or substitution"
+  ],
+  "hard_boundaries": {
+    "read_only_get_requests": true,
+    "continuous_all_contract_option_bbo": false,
+    "strategy_or_hypothesis_activity": false,
+    "indicators": false,
+    "paper_trades_or_pnl": false,
+    "alerts_or_telegram": false,
+    "orders_or_execution": false,
+    "ai_learning_or_scoring": false,
+    "source_news_inputs": false
+  },
+  "does_not_prove": "This baseline does not reconstruct past FnO membership, validate historical or ongoing OHLCV coverage, establish sector or corporate-action correctness, prove provider reliability, or support any strategy, liquidity, execution, P&L or performance claim."
+}

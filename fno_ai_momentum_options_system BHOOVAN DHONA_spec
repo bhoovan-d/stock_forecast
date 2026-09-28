@@ -1,0 +1,182 @@
+# NSE FnO AI Momentum Options System Specification
+
+## Purpose
+
+Build a paper trading research system that finds NSE FnO stocks with a credible point in time case for a 6 to 8 percent underlying move over two to three completed sessions. The system produces long call opportunities for bullish direction and long put opportunities for bearish direction. It does not place broker orders.
+
+The immediate objective is accurate and auditable paper alerts. A 50 percent win rate is a research target, not a promised or statistically validated result. Every output must preserve the data and model evidence that existed when it was created.
+
+## Fixed scope
+
+- Universe is a date versioned NSE FnO stock list. Index and ETF options are out of scope.
+- Signals are derived from the underlying stock. The tradeability layer uses the matching liquid stock option.
+- Long signals buy calls. Short signals buy puts. Option writing is out of scope.
+- Structural invalidation is based on the underlying and must be 0.5 to 3.0 percent from entry. It is never widened to qualify a trade.
+- The option has a separate 50 percent premium loss emergency exit.
+- The holding limit is three completed NSE sessions. A filled position may carry overnight. New entries use all sessions through the 15:15 fifteen minute close. Unfilled orders expire at 15:30.
+- The system publishes at most one core candidate per day and may hold at most two concurrent paper positions. It records AI sector and correlation reasons whenever it permits related positions.
+- First delivery is an internal dashboard and Telegram notification backed by an append only event ledger. There is no broker integration.
+
+## Non negotiable controls
+
+1. A bar may only influence a decision when its `available_at` is at or before `decision_at`.
+2. All rules, sources, thresholds, patterns, features, models, and live behavior require explicit approval from Aditya Lakhotia before activation or change.
+3. Only lawful public sources and properly licensed sources in the approved source registry may be collected. The system must not use unpublished price sensitive information or unapproved private sources.
+4. Every historical test is chronological. Random train test splits are prohibited. Use walk forward windows and embargoes between train, validation, and final test periods.
+5. Historical model scores, paper alerts, fills, expiries, and settlements are immutable events. Corrections append a new event; they do not rewrite the original record.
+
+## Opportunity definition
+
+The model studies a broad high sample cohort where a 1 to 2 percent structural stop gives a 2R target of 2 to 4 percent. This cohort trains and measures the ability to identify clean 2R opportunities.
+
+The publication model is stricter. It may issue a core paper alert only when the candidate has a named pattern, passes data quality and option liquidity checks, clears the frozen calibrated probability threshold for reaching 2R before stop or expiry, has positive expected net R after realistic option costs, and is predicted to make a 6 to 8 percent underlying move in two to three sessions.
+
+For every eligible candidate, store probabilities and realized labels for 2R, 3R, 4R, and 5R. The selected target is fixed before entry and never changed after the trade outcome is known.
+
+## Pattern families
+
+Each pattern has separate long and short definitions, statistics, model features, and cohorts. Results must never be pooled to justify a weak family or direction.
+
+| Family | Initial research definition | Notes |
+| --- | --- | --- |
+| Continuation breakout | Prior impulse, controlled consolidation, then directional range expansion with volume | Qullamaggie inspired hypothesis |
+| Episodic pivot | New time stamped event or catalyst creates revaluation, gap or expansion, then a defined continuation entry | Catalyst must be available before the decision |
+| Parabolic reversal | Extended and accelerating move reaches exhaustion, then a defined reversal confirmation occurs | Measured separately from momentum continuation |
+| Liquidity sweep | A prior daily or weekly swing level, multi touch shelf, or prior session high or low is swept | Both reversal reclaim and continuation variants are separate sub patterns |
+
+AI may propose a new pattern or variant. It must submit a change proposal containing the exact definition, supporting sample, data coverage, expected benefit, risks, model version, and test plan. It cannot change live behavior. Aditya Lakhotia must approve it, the variant must pass offline testing, and it starts a new versioned forward cohort.
+
+## Timeframe contract
+
+| Layer | Allowed information | Role |
+| --- | --- | --- |
+| Weekly and daily | Completed sessions only | Higher timeframe liquidity levels, context, structure |
+| Sixty minute | Completed bars only | Trend, volatility, sector and stock context |
+| Fifteen minute | Completed bars only | Candidate pattern and one entry variant |
+| Five minute | Completed bars only | Separate candidate and entry variant; lower timeframe sequence resolution |
+
+The system must independently test two entry variants: fifteen minute detection with the defined entry policy, and five minute detection with the defined entry policy. A liquidity sweep must be anchored to a daily or weekly level; five and fifteen minute activity only confirms or refines entry.
+
+## Data and source policy
+
+### Required market data
+
+- Date versioned FnO eligibility snapshots and symbol metadata.
+- Point in time daily, sixty minute, fifteen minute, five minute, and lower timeframe data for ambiguity resolution where available.
+- Historical and live option bid ask quotes, strikes, expiry, open interest, traded volume, lot size, and contract metadata.
+- Corporate action, exchange calendar, tick size, and trading session data.
+- Timestamped company filings, earnings releases, announcements, and approved news or social data where licensed and permitted.
+
+Every raw response receives a source identifier, retrieval time, source publication time where available, checksum, license tier, and parser version. Missing bars, stale quotes, invalid prices, duplicate timestamps, corporate actions, and abnormal spreads must produce a data quality event. Unresolved data faults block a core alert.
+
+### Source registry
+
+Each source registry record includes source name, source type, lawful access basis, terms, fields, latency, cost, collection method, retention policy, approval identifier, and active status. An AI may recommend a source but may not collect from it until it is approved. Cost increases beyond the initial INR 2,000 to 4,000 monthly expectation require a vendor comparison and written approval from Aditya Lakhotia.
+
+## Option contract and execution model
+
+The first contract envelope is liquid at the money through one step in the money stock options with 7 to 30 calendar days to expiry. The system must reject contracts that fail approved spread, quote freshness, volume, open interest, or contract metadata criteria.
+
+For a call or put selected from that envelope:
+
+1. Entry occurs only after a valid underlying event and a defined order rule. A buy is filled from observable ask data.
+2. A structural underlying stop, selected R target, time expiry, or 50 percent option premium emergency loss produces an exit. A sell is filled from the next observable bid.
+3. Costs, spread, slippage, gap handling, expiry, and contract roll restrictions are recorded.
+4. If an underlying bar touches both stop and target, resolve the sequence using lower timeframe data. If unavailable, record the stop first.
+
+Report normalized 1R statistics and actual per lot option bid ask P and L separately. No account sizing or funded capital allocation is in version one.
+
+## Model design
+
+### Core model
+
+Deterministic and versioned data preparation generates pattern candidates. The model may select and derive features from an approved feature library, including liquidity, trend, volatility, range compression, volume expansion, relative strength or weakness, stock regime, sector regime, option liquidity, pattern measurements, and timestamped catalyst features.
+
+The core model predicts probability of reaching 2R before structural stop or three session expiry. It also reports 3R, 4R, and 5R probabilities and predicted underlying move. The primary publication rank is calibrated 2R probability. Expected move and higher target probabilities explain target selection.
+
+### Vision model
+
+Raw time series and vision models are trained and tested separately. The vision corpus consists only of system generated, point in time daily, sixty minute, fifteen minute, and five minute chart snapshots for every candidate and rejection. Human selected charts are an educational pattern library and are excluded from scored training and evaluation. A combined model may be deployed only if it beats both standalone models on untouched tests.
+
+### Sentiment model
+
+The core stream requires the chart and quantitative gates. Sentiment may be a weighted feature but does not rescue a weak chart setup. Absence of approved news records a frozen neutral or missing treatment rather than an automatic rejection.
+
+The system also maintains a separately labeled Exploratory Sentiment Alert stream. It may be sentiment led, is unvalidated, has separate metrics, and must never be mixed into core win rate or promotion evidence. LLM inputs, raw source references, retrieval times, classifications, prompts, model version, and output hashes are retained. LLM advice cannot overwrite a core rule.
+
+## Research and validation
+
+1. Freeze universe rule, source registry, data contract, pattern definitions, feature policy, cost model, target policy, and formula versions.
+2. Use chronological development windows for feature discovery and one rule selection pass.
+3. Use embargoes between development, validation, and final windows.
+4. Evaluate the same opportunity set with geometry only, raw data model, vision model, and any combined model. Compare net R, drawdown, target hit rate, coverage, and missing data exclusions.
+5. Record results separately for every pattern direction pair, regime, stop band, target, time of day, sector, option maturity bucket, and data tier.
+
+The operational pilot threshold is 25 untouched historical results and 20 immutable forward paper alerts for every pattern direction pair. This is explicitly labeled a 50 percent target and not statistically validated. It authorizes provisional paper monitoring only, not funded trading or a claim of proven performance.
+
+Each deployed paper model is frozen for a complete 20 alert forward cohort. A new version may begin only after an approved change proposal and the end of the current cohort.
+
+## Immutable event ledger
+
+The ledger is append only. Required event types include `source_observed`, `data_quality_failure`, `candidate_created`, `candidate_rejected`, `core_paper_alert`, `exploratory_sentiment_alert`, `order_created`, `order_unfilled`, `paper_fill`, `paper_stop`, `paper_target`, `paper_expiry`, `settlement`, `model_change_proposed`, `model_change_approved`, and `model_change_rejected`.
+
+Every decision event contains at least:
+
+```json
+{
+  "event_id": "immutable UUID",
+  "event_type": "core_paper_alert",
+  "decision_at": "timezone aware timestamp",
+  "data_cutoff": "timezone aware timestamp",
+  "underlying": "NSE symbol",
+  "option_contract": "instrument identifier",
+  "direction": "long call or long put",
+  "pattern_family": "named versioned family",
+  "entry_rule": "machine readable rule",
+  "underlying_entry": 0,
+  "underlying_stop": 0,
+  "selected_target_r": 0,
+  "option_bid": 0,
+  "option_ask": 0,
+  "model_version": "immutable version",
+  "feature_schema_version": "immutable version",
+  "source_hashes": ["sha256"],
+  "reason_codes": ["machine readable reasons"],
+  "payload_hash": "sha256"
+}
+```
+
+## Dashboard and alert behavior
+
+The dashboard is the system of record. Telegram is a delivery channel, not a source of truth. Each alert links to its immutable event, source evidence, pattern measurements, option contract quote, score, selected target, structural stop, risk explanation, and status.
+
+The dashboard separately shows Core Paper Alerts and Exploratory Sentiment Alerts. It reports alerts, fills, unfilled orders, expiries, stops, target labels, per lot option P and L, normalized R, sector exposure, data failures, source status, model version, and cohort status.
+
+## Acceptance tests
+
+| Area | Required proof |
+| --- | --- |
+| Point in time data | No input with `available_at` after `decision_at` reaches a model or report |
+| Patterns | All four families and every long short variant have golden fixtures and rejection fixtures |
+| Liquidity sweep | Daily or weekly level is present; reversal and continuation variants remain distinct |
+| Fills | Buy at ask and sell at bid; gap and both touch fixtures behave by documented policy |
+| Options | Contract obeys 7 to 30 DTE and liquidity constraints; premium emergency exit works |
+| Vision | Generated point in time charts only; human selected examples cannot enter scored data |
+| Sentiment | Every source is approved and every LLM result is attributable and reproducible |
+| Validation | Walk forward and embargo tests are enforced; no random split utility is allowed |
+| Governance | Change proposal cannot alter an active model without Aditya approval |
+| Ledger | Every candidate state reconciles with no silent exclusion or overwritten event |
+| Delivery | Dashboard and Telegram payloads reference the same immutable alert |
+
+## Implementation sequence
+
+1. Establish bar availability, source registry, data validation, and immutable ledger.
+2. Build underlying pattern engine, higher timeframe liquidity sweep contract, and direction symmetric replay.
+3. Add option contract data, bid ask fills, costs, expiry, and settlement.
+4. Build walk forward research harness and pattern direction cohort reports.
+5. Add raw feature model and calibrated publication rules.
+6. Add systematic chart generation and vision model comparison.
+7. Add approved sentiment ingestion and separate exploratory stream.
+8. Add dashboard, Telegram delivery, approval workflow, and health monitoring.
+9. Run immutable forward paper cohorts. Funded execution remains a separate future approval.
+

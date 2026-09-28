@@ -1,0 +1,39 @@
+{
+  "decision_authority": "Aditya Lakhotia",
+  "decision_date": "2026-09-17",
+  "scope": "one-shot-connectivity-and-data-quality-verification-only",
+  "provider": "Upstox",
+  "credential": "Analytics Token stored only in Windows Credential Manager",
+  "static_ip": false,
+  "underlying": "NSE_EQ|INE002A01018",
+  "underlying_symbol": "RELIANCE",
+  "option_contract_count": 1,
+  "allowed_http_method": "GET",
+  "allowed_routes": [
+    "https://assets.upstox.com/market-quote/instruments/exchange/NSE.json.gz",
+    "https://api.upstox.com/v3/market-quote/quotes?instrument_key=<one-approved-key>",
+    "https://api.upstox.com/v2/option/contract?instrument_key=<one-approved-underlying>",
+    "https://api.upstox.com/v2/option/chain?instrument_key=<one-approved-underlying>&expiry_date=<date>",
+    "https://api.upstox.com/v3/historical-candle/<approved-path>",
+    "https://api.upstox.com/v3/feed/market-data-feed/authorize"
+  ],
+  "verification_routes_used": [
+    "NSE instrument master",
+    "V3 full market quote for one underlying",
+    "V3 full market quote for one option"
+  ],
+  "raw_payload_retention": "none; held in memory for the one-shot verification",
+  "report_retention": "sanitized schema, selected field values, timestamps, route audit, and quality failures only",
+  "routine_collection": "not-authorized",
+  "prohibited": [
+    "static IP configuration",
+    "account, portfolio, holdings, funds, order, trade-history, P&L, or mutation endpoints",
+    "routine collection",
+    "strategy or candidate work",
+    "alerts or Telegram",
+    "paper P&L",
+    "AI",
+    "execution or trading",
+    "NIFTY500 Source News activity or cross-system flow"
+  ]
+}

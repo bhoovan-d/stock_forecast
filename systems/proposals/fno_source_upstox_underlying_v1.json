@@ -1,0 +1,18 @@
+{
+  "source_id": "upstox-read-only-underlying-foundation-v1",
+  "name": "Upstox NSE FnO Stock Underlying Data Foundation",
+  "source_type": "authenticated_read_only_broker_market_data_and_public_instrument_master",
+  "lawful_access_basis": "Proposed private local research through the operator-owned account and read-only Analytics Token; no display, redistribution, alerts, orders or trading. Not active until Aditya Lakhotia approves the exact collection and source manifests.",
+  "terms_reference": "https://upstox.com/developer/api-documentation/analytics-token/",
+  "fields": [
+    "current NSE FnO stock-underlying and option-contract reference metadata",
+    "NSE_EQ daily, 15-minute and 5-minute OHLCV with provider bar timestamps",
+    "current NSE_EQ quote price, volume, provider timestamp and last-trade timestamp where supplied",
+    "local UTC request and receipt timestamps, collection order, content hashes and quality/failure records"
+  ],
+  "latency": "Historical requests are downloaded on approval; proposed ongoing underlying quotes every five minutes during the NSE equity session. Quote snapshots are not tick history or guaranteed executable prices.",
+  "monthly_cost_inr": 0,
+  "collection_method": "Proposed GET-only NSE instrument master, Upstox V3 historical/intraday candle, and V3 full-market-quote endpoints for NSE_EQ keys only, with no order/account routes.",
+  "retention_policy": "Proposed private local content-addressed gzip raw storage for seven days, permanent compressed normalized data and audit summaries, with a fail-closed 250 MiB total storage cap and audited raw deletion.",
+  "version": "1"
+}

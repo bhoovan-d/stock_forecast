@@ -1,0 +1,18 @@
+{
+  "source_id": "upstox-read-only-market-data-v3",
+  "name": "Upstox Read-Only Market Data APIs v3",
+  "source_type": "authenticated_free_broker_market_data",
+  "lawful_access_basis": "Private authenticated research use through an operator-authorized Upstox account and free read-only Analytics Token; no display or redistribution outside the private research system.",
+  "terms_reference": "https://upstox.com/developer/api-documentation/announcements/analytics-token/",
+  "fields": [
+    "NSE equity daily, weekly, monthly, hourly, and minute OHLCV with timestamps",
+    "current NSE equity and F&O instrument identifiers, expiry, strike, option type, tick size, and lot size",
+    "current option best bid, best ask, bid and ask quantities, traded volume, and open interest",
+    "feed receipt timestamp, last trade timestamp, underlying price, and available option greeks"
+  ],
+  "latency": "Historical REST plus request-time and streaming market data; original provider and local receipt timestamps retained.",
+  "monthly_cost_inr": 0,
+  "collection_method": "Authenticated read-only Upstox V3 REST and WebSocket market-data endpoints only; order, portfolio, funds, and account-mutation endpoints are prohibited.",
+  "retention_policy": "Store immutable raw responses and hashes for seven years in private access-controlled storage solely for internal paper research; no external display or redistribution.",
+  "version": "1"
+}

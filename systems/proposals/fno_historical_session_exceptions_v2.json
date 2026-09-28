@@ -1,0 +1,18 @@
+{
+  "version": "nse-historical-session-exceptions-v2",
+  "timezone": "Asia/Kolkata",
+  "scope": "Documented NSE equity continuous trading windows only; not a complete historical exchange calendar",
+  "exceptions": [
+    {"date": "2022-10-24", "start": "18:15", "end": "19:15", "source": "https://archives.nseindia.com/content/circulars/CMTR54023.pdf"},
+    {"date": "2023-11-12", "start": "18:15", "end": "19:15", "source": "https://nsearchives.nseindia.com/content/circulars/CMTR59124.pdf"},
+    {"date": "2024-11-01", "start": "18:00", "end": "19:00", "source": "https://nsearchives.nseindia.com/content/circulars/CMTR64628.pdf"},
+    {"date": "2025-10-21", "start": "13:45", "end": "14:45", "source": "https://nsearchives.nseindia.com/content/circulars/CMTR70319.pdf"},
+    {"date": "2022-10-27", "symbol": "NMDC", "start": "10:00", "end": "15:30", "source": "https://archives.nseindia.com/content/circulars/FAOP54189.pdf"},
+    {"date": "2026-04-30", "symbol": "VEDL", "start": "10:00", "end": "15:30", "source": "https://nsearchives.nseindia.com/content/circulars/CMTR73856.pdf"},
+    {"date": "2024-01-20", "start": "09:15", "end": "15:30", "source": "https://nsearchives.nseindia.com/content/circulars/MSD60340.pdf", "note": "Revised full-day notice supersedes earlier MSD59999 split-session notice"},
+    {"date": "2024-03-02", "segments": [["09:15", "10:00"], ["11:30", "12:30"]], "source": "https://nsearchives.nseindia.com/content/circulars/MSD60677.pdf"},
+    {"date": "2024-05-18", "segments": [["09:15", "10:00"], ["11:30", "12:30"]], "source": "https://nsearchives.nseindia.com/content/circulars/MSD61893.pdf"},
+    {"date": "2025-02-01", "start": "09:15", "end": "15:30", "source": "https://nsearchives.nseindia.com/content/circulars/MSD66381.pdf"},
+    {"date": "2026-02-01", "start": "09:15", "end": "15:30", "source": "https://nsearchives.nseindia.com/content/circulars/CMTR72349.pdf"}
+  ]
+}

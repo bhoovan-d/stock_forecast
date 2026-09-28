@@ -1,0 +1,31 @@
+{
+  "manifest_id": "fno-pattern-prior-session-high-bearish-reclaim-15m-v1",
+  "kind": "pattern",
+  "version": "1",
+  "definition": {
+    "minimum_prior_touches": 1,
+    "minimum_sweep_bps": 30,
+    "minimum_reclaim_bps": 20,
+    "confirmation_bars": 2,
+    "allowed_anchor_kinds": [
+      "prior_session"
+    ],
+    "variant": "reversal_reclaim",
+    "direction": "bearish",
+    "entry_timeframe": "15m",
+    "anchor_side": "prior_session_high",
+    "entry_rule": "next_completed_15m_bar_open_same_session_after_reclaim",
+    "structural_stop_rule": "highest_sweep_extreme_before_confirmation",
+    "minimum_stop_pct": 0.5,
+    "maximum_stop_pct": 2.0,
+    "target_r": 2.0,
+    "maximum_holding_sessions": 3,
+    "holding_session_counting": "entry_session_inclusive",
+    "same_bar_stop_target_policy": "stop_first_without_finer_evidence",
+    "option_position": "long_put"
+  },
+  "evidence": "Clean-room 15-minute geometry study prior-session-sweep-reclaim-15m-v1 over 210 FnO underlyings and 840 immutable capture windows from 2026-06-15 through 2026-09-15. Selected using development expectancy only from 128 predeclared direction/threshold combinations. Development: 866 outcomes, +0.0753R mean. Validation: 428 outcomes, +0.0972R mean. Later observed evaluation: 159 outcomes, +0.6039R mean. Reproducible report hash 94fe3fb2b70ba6a7e771e41da3b2731d486e904a84aea9a0cb6bf16c663a602a.",
+  "expected_benefit": "Freeze one direction-specific underlying geometry hypothesis for continued historical and forward paper research without pooling it with the failed bullish mirror.",
+  "risks": "Geometry-only results exclude option bid-ask spreads, slippage, fees, taxes, fills, and premium behavior. The 128-hypothesis selection creates selection bias, the observed evaluation window is no longer untouched, the period is short, and the strongest later result overlaps a weak equity-market regime. This proposal does not authorize alerts, option selection, execution, or funded trading.",
+  "test_plan": "Verify direction and timeframe rejection fixtures; independently reproduce the 840-window study; embargo chronological development, validation, and evaluation windows; require a fresh untouched historical cohort plus provider-timestamped BBO cost replay; then require 20 immutable forward paper alerts before any promotion decision. Keep the bullish mirror rejected and separately versioned."
+}

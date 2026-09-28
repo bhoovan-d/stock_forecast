@@ -1,0 +1,28 @@
+"""Binding constants for the FnO Options Momentum track."""
+
+TRACK_ID = "fno-options-momentum"
+APPROVER_ID = "aditya-lakhotia"
+AUTHORIZED_APPROVER_IDS = frozenset({APPROVER_ID})
+
+
+def is_authorized_approver(actor_id: str) -> bool:
+    return actor_id in AUTHORIZED_APPROVER_IDS
+
+CLEAN_ROOM_ONLY = True
+ADITYA_APPROVAL_REQUIRED = True
+PAPER_ONLY = True
+POINT_IN_TIME_ONLY = True
+IMMUTABLE_LEDGER = True
+APPROVED_SOURCES_ONLY = True
+FAIL_CLOSED = True
+TRACK_ISOLATION = True
+VERSIONED_CHANGE_CONTROL = True
+
+MIN_STOP_PCT = 0.5
+MAX_STOP_PCT = 3.0
+MAX_HOLDING_SESSIONS = 3
+MAX_CORE_ALERTS_PER_SESSION = 1
+MAX_CONCURRENT_PAPER_POSITIONS = 2
+OPTION_PREMIUM_LOSS_GUARD_PCT = 50.0
+MIN_OPTION_DTE = 7
+MAX_OPTION_DTE = 30

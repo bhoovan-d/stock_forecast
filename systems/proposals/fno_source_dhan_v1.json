@@ -1,0 +1,18 @@
+{
+  "source_id": "dhanhq-data-api-v2",
+  "name": "DhanHQ Data API v2",
+  "source_type": "authenticated_broker_market_data",
+  "lawful_access_basis": "Private authenticated use through an account owned and authorized by the operator under the DhanHQ Data API subscription; no redistribution.",
+  "terms_reference": "https://dhanhq.co/docs/v2/",
+  "fields": [
+    "NSE equity daily and intraday OHLCV with timestamps",
+    "NSE F&O contract identifiers and metadata",
+    "request-time option best bid, best ask, quantities, volume, and open interest",
+    "expired stock-option minute OHLC, strike, spot, volume, open interest, and implied volatility"
+  ],
+  "latency": "Historical REST plus request-time quote snapshots and optional live market feed; exact availability timestamps retained per response.",
+  "monthly_cost_inr": 499,
+  "collection_method": "Authenticated DhanHQ v2 REST and WebSocket data endpoints only; all trading and order endpoints are prohibited.",
+  "retention_policy": "Store immutable raw responses and hashes for seven years in private access-controlled storage; do not display or redistribute market data outside the operator's private research system.",
+  "version": "1"
+}

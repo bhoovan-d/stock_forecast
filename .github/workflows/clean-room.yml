@@ -1,0 +1,52 @@
+name: Clean-room systems
+
+on:
+  push:
+    paths:
+      - "systems/**"
+      - "scripts/check_clean_room.py"
+      - ".github/workflows/clean-room.yml"
+  pull_request:
+    paths:
+      - "systems/**"
+      - "scripts/check_clean_room.py"
+      - ".github/workflows/clean-room.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  boundaries:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Verify clean-room boundaries
+        run: python scripts/check_clean_room.py
+
+  fno-momentum:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install clean-room package
+        run: python -m pip install -e "systems/fno_momentum[dev]"
+      - name: Test FnO Momentum foundation
+        run: python -m pytest -q systems/fno_momentum/tests
+
+  source-news:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install clean-room package
+        run: python -m pip install -e "systems/nifty500_source_news[dev]"
+      - name: Test Source News foundation
+        run: python -m pytest -q systems/nifty500_source_news/tests

@@ -1,0 +1,66 @@
+{
+  "manifest_id": "fno-upstox-reliance-quality-pilot-v1",
+  "kind": "data_quality_pilot",
+  "version": "1",
+  "status": "approved_not_yet_run",
+  "provider": "Upstox Analytics Token",
+  "source_manifest": "fno_source_upstox_reliance_quality_pilot_v1.json",
+  "source_manifest_hash": "63405f858a21982c328002f70918423b542ba27f0d776621bb1f4221c1d5c040",
+  "purpose": "Verify the read-only market-data pipeline during market hours without producing a strategy, candidate, alert, P&L, or trade decision.",
+  "scope": {
+    "underlying_symbol": "RELIANCE",
+    "underlying_type": "EQUITY",
+    "option_instrument_types": [
+      "CE",
+      "PE"
+    ],
+    "contract_coverage": "all currently listed strikes and expiries for RELIANCE",
+    "snapshot_interval_seconds": 60,
+    "snapshot_count": 20,
+    "required_market_window": "09:15-15:30 Asia/Kolkata on an NSE trading session"
+  },
+  "allowed_endpoints": [
+    "GET https://assets.upstox.com/market-quote/instruments/exchange/NSE.json.gz",
+    "GET https://api.upstox.com/v3/market-quote/quotes"
+  ],
+  "captured_fields": [
+    "instrument key",
+    "provider timestamp",
+    "local UTC receipt timestamp",
+    "last-trade timestamp",
+    "best bid and quantity",
+    "best ask and quantity",
+    "open interest",
+    "volume"
+  ],
+  "quality_outputs": [
+    "requested and returned instrument counts",
+    "missing or malformed rows",
+    "empty and crossed markets",
+    "provider-to-local timestamp-lag distribution",
+    "last-trade-age distribution",
+    "API failures and collection gaps",
+    "raw content hashes"
+  ],
+  "storage": {
+    "root": "C:\\adiproj2\\data\\fno_momentum\\upstox\\reliance_quality_pilot_v1",
+    "maximum_total_bytes": 262144000,
+    "raw_retention_days": 7,
+    "cloud_backup": false,
+    "external_sharing": false
+  },
+  "hard_boundaries": {
+    "read_only_get_requests": true,
+    "orders": false,
+    "portfolio_or_funds_access": false,
+    "alerts": false,
+    "telegram": false,
+    "strategy_or_hypothesis_activity": false,
+    "paper_pnl": false,
+    "ai_learning": false
+  },
+  "approval_evidence": "The original 60-minute pilot was approved by Aditya Lakhotia on 2026-09-20. Aditya explicitly approved reducing it to 20 one-minute snapshots for immediate execution on 2026-09-21; all other boundaries remain unchanged.",
+  "does_not_prove": "The pilot does not prove executable fills, general market liquidity, profitability, a trading edge, provider reliability outside the sampled hour, or future performance."
+}
+
+

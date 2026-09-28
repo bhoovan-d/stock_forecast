@@ -1,0 +1,18 @@
+{
+  "source_id": "upstox-read-only-market-data-v3",
+  "name": "Upstox Read-Only FnO Universe Foundation v1",
+  "source_type": "authenticated_and_public_broker_market_data",
+  "lawful_access_basis": "Private local research through the operator-owned Upstox account; no display, redistribution, alerts, orders, or trading. The public NSE instrument master does not require the Analytics Token.",
+  "terms_reference": "https://upstox.com/developer/api-documentation/instruments/",
+  "fields": [
+    "current NSE FnO stock-underlying identifiers and symbols",
+    "current NSE stock-option contract identifier, call or put, strike, expiry, lot size, tick size and lifecycle evidence",
+    "provider retrieval timestamp, local UTC receipt timestamp and raw content hash",
+    "future approved underlying daily, 15-minute and 5-minute OHLCV and current quote observations"
+  ],
+  "latency": "Current instrument-master snapshot now; historical and ongoing underlying observations remain blocked until their exact dates and cadence are approved.",
+  "monthly_cost_inr": 0,
+  "collection_method": "GET-only Upstox NSE instrument master for the approved baseline. Historical-candle and full-quote routes are implemented but remain inactive in this phase.",
+  "retention_policy": "Private local storage; raw payloads may be retained for seven days under the existing policy, while hashes, manifests, coverage, quality and deletion records remain permanent.",
+  "version": "1"
+}
