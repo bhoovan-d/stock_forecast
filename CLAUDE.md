@@ -615,24 +615,41 @@ uv run python scripts/check_clean_room.py   # clean-room boundary; must print "v
 
 ### CI, and the collection freeze
 
-**Collection has been frozen since 16 Sep 2026.** `daily-brief.yml` (19:00 IST) and
-`trident-watch.yml` (19:30 IST) both carry `if: ${{ false }}` on their jobs, with the
-comment: *"Governance freeze approved by Aditya Lakhotia on 2026-09-16 … do not run
-collection, strategy, LLM, or publication steps until a later exact approval removes this
-guard."* The workflows are preserved for audit history. **Lifting that guard needs that
-exact approval — tidying docs, bringing things up to speed or "doing the needful" is not it.**
+**A collection freeze was approved on 16 Sep 2026 — and it only takes effect once it is on
+GitHub.** `daily-brief.yml` (19:00 IST) and `trident-watch.yml` (19:30 IST) carry
+`if: ${{ false }}` on their jobs, with the comment: *"Governance freeze approved by Aditya
+Lakhotia on 2026-09-16 … do not run collection, strategy, LLM, or publication steps until a
+later exact approval removes this guard."* The workflows are preserved for audit history.
+**Lifting that guard needs that exact approval — tidying docs, bringing things up to speed
+or "doing the needful" is not it.**
 
-What the freeze explains, so nobody debugs it as a fault: `data/briefs/` stops at 9 Sep;
-`data/trident_watch.jsonl` has **never been created**, so the trident forward record —
-which `docs/spec-trident.md` calls the only remedy for the 60-session history cap — holds
-zero records; and the V3 forward record is empty (see "V3 evidence and capital invariants").
+**The freeze was not in effect from 16 to at least 29 Sep, because it was never pushed.**
+The guard sat uncommitted in the local working copy; GitHub Actions runs the copy on
+`origin/main`, which had no guard. CI therefore kept collecting and published briefs to the
+live site on 16, 17, 18 and 21 Sep, and appended a trident forward record on 25 Sep — all
+after the approval. The lesson generalises: **a workflow change is not in force until it is
+on the branch the runner reads.** Check `git show origin/main:<workflow>` rather than the
+local file before telling anyone a job is stopped. (Git Bash mangles `origin/main:path`
+into a Windows path; set `MSYS_NO_PATHCONV=1` or the check silently reports nothing.)
+
+State of the forward records, so nobody debugs them as faults:
+- **Trident** — `data/trident_watch.jsonl` was written by CI, not locally, and reached this
+  machine only on merging `origin/main` on 29 Sep. **4 records: 3 resolved, all stops, all
+  inside their entry session** (DIVISLAB 27 Aug −1.72R, OFSS 31 Aug −1.39R, HAL 9 Sep
+  −2.02R net), and ZYDUSLIFE 25 Sep still open. Stops of 0.17–0.44% are why each loss is
+  worse than −1R: cost in R is `cost% / stop%`. Three trades settle nothing; they are the
+  start of the record, not a verdict.
+- **V3** — empty in the live format (see "V3 evidence and capital invariants").
+- **Briefs** — the published site runs to 21 Sep; the local `data/briefs/` (gitignored)
+  stops at 9 Sep because CI's copies are committed only as `public/` HTML.
 
 When unfrozen, `daily-brief.yml` publishes `--setup reclaim --setup base-breakout`, commits
 `public/`, and Vercel deploys on push. It must run after 18:00 IST, when the bhavcopy lands;
 earlier just 404s.
 
-The only workflow that runs today is **`clean-room.yml`** — the boundary check plus the two
-`systems/` test suites. **The 304-test root suite is run by no workflow at all.** A local
+Once the guard is on GitHub, the only workflow that runs is **`clean-room.yml`** — the
+boundary check plus the two `systems/` test suites. **The 304-test root suite is run by no
+workflow at all.** A local
 green `uv run pytest -q` is currently the only signal it has, so run it before every commit
 that touches `src/asymmetry`.
 
