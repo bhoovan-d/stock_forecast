@@ -350,6 +350,7 @@ def build(catalog: Path, ledger_path: Path, out: Path, *, symbols=None, verify_r
         'ledger': {k: ledger[k] for k in ('status', 'events', 'error', 'head')},
         'stocks': stocks,
     }
+    (out / 'eligibility.json').write_text(json.dumps(eligibility_manifest(stocks, ref, catalog_sha), indent=1), encoding='utf-8')
     (out / 'index.html').write_text(index_page(summary), encoding='utf-8')
     (out / 'report.md').write_text(report_md(summary), encoding='utf-8')
     blob = json.dumps(summary, indent=1, default=str).encode()
@@ -415,6 +416,58 @@ def _basis_check(stock, rows_by):
                 + '; each series is internally consistent, but do not mix daily price levels with intraday bars for those years')
         for iv in INTERVALS:
             stock['intervals'][iv]['extra_notes'].append(text)
+
+
+def eligibility_manifest(stocks, ref, catalog_sha):
+    """Every exclusion the view shows, keyed by session or week, for `eligible_data` to enforce."""
+    def days(stamps):
+        out = set()
+        for s in stamps:
+            try:
+                out.add(chart_time(s, 'daily'))
+            except (TypeError, ValueError):
+                pass
+        return out
+    result = {'view_version': VIEW_VERSION, 'catalog_sha256': catalog_sha,
+              'nse_catalog_sha256': ref.catalog_sha256 if ref else None,
+              'nse_sessions': sorted(d for d, st in ref.days.items() if st == 'PUBLISHED') if ref else [],
+              'nse_unresolved': sorted(d for d, st in ref.days.items() if st not in ('PUBLISHED', 'NOT_PUBLISHED')) if ref else [],
+              'stocks': {}}
+    for st in stocks:
+        listed = (st.get('nse') or {}).get('listing_date')
+        daily_first = st['intervals']['daily']['first']
+        before = listed if listed and daily_first and chart_time(daily_first, 'daily') < listed else None
+        entry = {'status': st['status'], 'listing_date': listed, 'basis': st.get('basis', {}), 'intervals': {},
+                 'exclude_before': before}
+        for iv, s in st['intervals'].items():
+            ex = {}
+            for kind, reason in (('missing', 'absent bar start(s) in the session'), ('preopen', 'pre-open placeholder rows in the session'),
+                                 ('quarantined', 'provider row quarantined as invalid')):
+                for d in days(g['stamp'] for g in s['gaps'] if g['kind'] == kind):
+                    ex.setdefault(d, reason)
+            c = s.get('nse') or {}
+            for d in c.get('missing_sessions', []):
+                ex.setdefault(d, 'NSE session with no stored bar')
+            for d in c.get('untraded_sessions', []):
+                ex.setdefault(d, 'NSE session with no NSE row for the stock')
+            entry['intervals'][iv] = {'status': s['status'], 'excluded': dict(sorted(ex.items())),
+                                      'first': chart_time(s['first'], 'daily') if s['first'] else None,
+                                      'last': chart_time(s['last'], 'daily') if s['last'] else None}
+        w = st['weekly']
+        weekly = {'derived': bool(w.get('derived')), 'why': w.get('why'), 'excluded_weeks': {}}
+        if w.get('derived'):
+            ex = {wk: 'an NSE session in the week has no stored daily bar' for wk in w['incomplete_weeks']}
+            ex |= {wk: 'a calendar day in the week is unresolved' for wk in w['unresolved_weeks']}
+            if before:
+                first_week = date.fromisoformat(chart_time(daily_first, 'daily'))
+                d = first_week - timedelta(days=first_week.weekday())
+                while d.isoformat() < before:
+                    ex.setdefault(d.isoformat(), 'before the NSE listing date; security lineage unverified')
+                    d += timedelta(days=7)
+            weekly['excluded_weeks'] = dict(sorted(ex.items()))
+        entry['weekly'] = weekly
+        result['stocks'][st['symbol']] = entry
+    return result
 
 
 def _settle(s):
