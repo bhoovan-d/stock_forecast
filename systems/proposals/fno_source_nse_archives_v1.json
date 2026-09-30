@@ -1,0 +1,18 @@
+{
+  "source_id": "nse-archives-public-eod-v1",
+  "name": "NSE public archive: capital-market bhavcopy and equity listing file",
+  "source_type": "public_exchange_archive_unauthenticated_read_only",
+  "lawful_access_basis": "Files NSE publishes for public download on nsearchives.nseindia.com, fetched GET-only without credentials for private local research of the 20 selected FnO stocks; no redistribution, display, alerts or trading. Proposed for three purposes only: an exchange trading-session calendar, listing dates, and an independent cross-check of the stored Upstox daily series. Not active until Aditya Lakhotia approves this exact manifest in the source ledger.",
+  "terms_reference": "https://www.nseindia.com/terms-of-use (www.nseindia.com is not reachable from this host; nsearchives.nseindia.com serves the files)",
+  "fields": [
+    "per-date existence of the NSE capital-market bhavcopy (published / not published / fetch failure), as trading-session evidence",
+    "bhavcopy EQ-series rows for the 20 selected symbols only: symbol, ISIN, series, open, high, low, close, last, previous close, total traded quantity, total traded value, trade count where supplied",
+    "EQUITY_L.csv rows for the 20 selected symbols: symbol, ISIN, series, date of listing",
+    "local UTC request and receipt timestamps, HTTP status, content hashes and parse/quality records"
+  ],
+  "latency": "Historical end-of-day files, fetched once for 2000-01-01 to 2026-09-25 on approval. Not a live or intraday source.",
+  "monthly_cost_inr": 0,
+  "collection_method": "GET-only requests to nsearchives.nseindia.com for the daily bhavcopy file of every calendar date in range (weekends included, because special sessions exist) and the current EQUITY_L.csv. At most one request per second, one collector at a time, no retry of a failed date without a recorded reason. HTTP 404 is recorded as 'not published'; any other failure is recorded as SOURCE_FAILURE and blocks the calendar for that date.",
+  "retention_policy": "Permanent content-addressed gzip storage of every raw response, permanent normalized extracts limited to the 20 selected symbols, hash-chained audit ledger. Fail-closed 1 GiB storage cap for this source root. Nothing replaces, edits or fills a stored Upstox value; NSE values are kept side by side as a separate series.",
+  "version": "1"
+}
